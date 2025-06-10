@@ -49,6 +49,7 @@ set(KMODULE_SOURCES
         ../include/common.h
         ../include/events.h
         ../include/ioctl.h
+        ../include/tsc.h
 )
 
 foreach(FILENAME ${KMODULE_SOURCES})

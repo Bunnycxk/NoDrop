@@ -7,6 +7,7 @@
 #include "config.h"
 #include "events.h"
 #include "common.h"
+#include "tsc.h"
 
 #ifndef PATH_FMT
 #define PATH_FMT CONFIG_STORE_PATH "/%u-%ld.buf"
@@ -28,7 +29,8 @@ static const char *__print_format[PT_UINT64 + 1][PF_OCT + 1] = {
     [PT_UINT64] = {"", "%"PRIu64, "0x%"PRIx64, "%010" PRIu64, "0%"PRIo64}/*PT_UINT64*/
 };
 
-static int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__data)
+static _unused
+int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__data)
 {
     size_t i;
     const struct nod_event_info *info;
@@ -143,6 +145,5 @@ int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info) {
 
     fclose(file);
     buffer_info->nevents = buffer_info->tail = 0;
-
     return 0;
 }

@@ -15,6 +15,7 @@
 #include "procinfo.h"
 
 #include "common.h"
+#include "tsc.h"
 #include "config.h"
 
 static struct elf_phdr *monitor_elf_phdata, *interp_elf_phdata;

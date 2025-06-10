@@ -15,6 +15,7 @@
 
 typedef uint64_t nanoseconds;
 #define _packed __attribute__((packed))
+#define _unused __attribute__((unused))
 
 #define MAX_EVENT_NUM 8192
 #define SYSCALL_TABLE_SIZE 512
@@ -882,8 +883,8 @@ enum nod_event_type {
 
 struct nod_buffer_info {
     volatile uint64_t nevents;
-    volatile uint32_t tail;
     volatile uint64_t n_solved_evts;
+    volatile uint32_t tail;
     unsigned long buffer_size;
 };
 

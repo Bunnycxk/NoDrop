@@ -8,6 +8,7 @@
 #include "events.h"
 #include "common.h"
 #include "ioctl.h"
+#include "tsc.h"
 
 #include "config.h"
 

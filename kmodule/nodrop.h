@@ -202,17 +202,17 @@ static inline struct inode *file_inode(struct file *f)
 
 #endif // NODROP_H_
 
-static void __attribute__((unused))
-memory_dump(char *p, size_t size)
+static inline _unused
+void memory_dump(char *p, size_t size)
 {
     unsigned int j;
-	pr_info("memory dump at 0x%lx (%ld)\n", (unsigned long)p, size);
+    pr_info("memory dump at 0x%lx (%ld)\n", (unsigned long)p, size);
     for (j = 0; j < size; j += 8)
         pr_info("%*ph\n", 8, &p[j]);
 }
 
-__attribute__((unused))
-static inline nanoseconds nod_nsecs(void) {
+static inline _unused
+nanoseconds nod_nsecs(void) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0)
 	return ktime_get_real_ns();
 #else

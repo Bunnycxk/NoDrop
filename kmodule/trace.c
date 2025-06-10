@@ -12,6 +12,7 @@
 #include "common.h"
 #include "events.h"
 #include "procinfo.h"
+#include "tsc.h"
 
 #ifndef CONFIG_HAVE_SYSCALL_TRACEPOINTS
  #error The kernel must have HAVE_SYSCALL_TRACEPOINTS in order to be useful

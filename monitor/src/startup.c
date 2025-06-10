@@ -120,8 +120,6 @@ nod_start_main(int argc, char **argv, char **env) {
 #endif
     }
 
-    // static char strbuf[256];
-    // uint64_t ts = rdtsc();
     ASSERT_OUT(likely((p->ioctl_fd = open(NOD_IOCTL_PATH, O_RDWR)) >= 0),
                "Open " NOD_IOCTL_PATH " failed",);
 
@@ -166,8 +164,6 @@ nod_start_main(int argc, char **argv, char **env) {
 #endif
     }
 
-    // int len = sprintf(strbuf, "ts:%lu tail:%u\n", ts, p->buffer_info->tail);
-    // write(fileno(stdout), strbuf, len);
     nod_monitor_main(p->buffer, p->buffer_info);
 
 out:

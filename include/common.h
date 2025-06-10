@@ -50,8 +50,7 @@ struct nod_monitor_info {
 	unsigned long fsbase;
 };
 
-__attribute__((unused))
-static unsigned long 
+static unsigned long _unused
 nod_calc_hash(struct nod_stack_info *stack)
 {
 	return stack->fsbase ^ (stack->ioctl_fd + 42) ^ (stack->pkey - 42) ^ 

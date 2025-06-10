@@ -248,16 +248,10 @@ static int nod_dev_mmap(struct file *filp, struct vm_area_struct *vma)
         vpr_err("invalid pgoff %lu, must be 0\n", vma->vm_pgoff);
         return -EIO;
     }
-    
+
     info = (const struct nod_buffer_info *)p->buffer.info;
     length = vma->vm_end - vma->vm_start;
-    if (length <= PAGE_SIZE) {
-        ret = remap_vmalloc_range(vma, (void *)info, 0);
-        if (ret < 0) {
-            vpr_err("remap_vmalloc_range for buffer info failed (%d)\n", ret);
-            return ret;
-        }
-    } else if (length == info->buffer_size) {
+    if (length == info->buffer_size) {
         if (vma->vm_flags & VM_WRITE) {
             vpr_err("invalid mmap flags 0x%lx\n", vma->vm_flags);
             return -EINVAL;
@@ -266,6 +260,12 @@ static int nod_dev_mmap(struct file *filp, struct vm_area_struct *vma)
         ret = remap_vmalloc_range(vma, p->buffer.buffer, 0);
         if (ret < 0) {
             vpr_err("remap_vmalloc_range for buffer failed (%d)\n", ret);
+            return ret;
+        }
+    } else if (length > 0) {
+        ret = remap_vmalloc_range(vma, (void *)info, 0); 
+        if (ret < 0) {
+            vpr_err("remap_vmalloc_range for buffer info failed (%d)\n", ret);
             return ret;
         }
     } else {
