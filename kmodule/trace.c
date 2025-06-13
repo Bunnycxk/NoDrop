@@ -148,6 +148,7 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
         // end = nod_nsecs();
         // pr_info("post %llu\n", end - start);
         nod_proc_set_out(p);
+        vpr_info("ctxswtich ts:%llu\n", nod_rdtsc() - p->buffer.info->tsc);
 
         break;
 
@@ -167,7 +168,7 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
             unsigned long clone_flags;
             syscall_get_arguments_deprecated(current, regs, 1, 1, &clone_flags);
             if (clone_flags & CLONE_VM) {
-                if (!nod_proc_acquire(NOD_SHARE, NULL, -1, current))
+                if (!nod_proc_acquire(NOD_SHARE, NULL, current))
                     vpr_err("acquire NOD_SHARE for childed process failed\n");
             } else {
                 /* 
@@ -175,7 +176,7 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
                  * he should inherit parent's procinfo, including buffer, load address and pkey.
                  * We mark it here and do it lazily.
                  */
-                if (!nod_proc_acquire(NOD_CLONE, NULL, -1, current))
+                if (!nod_proc_acquire(NOD_CLONE, NULL, current))
                     vpr_err("acquire NOD_CLONE for childed process failed\n");
             }
         } else {
@@ -187,11 +188,11 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
                 if (p) {
                     nod_init_procinfo(current, p);
                 } else {
-                    p = nod_proc_acquire(evt_from, NULL, -1, current);
+                    p = nod_proc_acquire(evt_from, NULL, current);
                     if (!p) break;
                 }
             } else if (!p) {
-                p = nod_proc_acquire(evt_from, NULL, -1, current);
+                p = nod_proc_acquire(evt_from, NULL, current);
                 if (!p) break;
             }
             retval = syscall_probe(p, regs, id, 0);
@@ -230,7 +231,7 @@ static int
 exit_filter(struct nod_proc_info *p, struct pt_regs *regs)
 {
     if (!p) {
-        p = nod_proc_acquire(NOD_OUT, NULL, -1, current);
+        p = nod_proc_acquire(NOD_OUT, NULL, current);
         if (!p) return 0;
     }
 

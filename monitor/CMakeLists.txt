@@ -52,8 +52,8 @@ include_directories(
 )
 
 add_executable(${MONITOR} ${MONITOR_SOURCES})
-add_custom_command(TARGET ${MONITOR} POST_BUILD
-        COMMAND strip -R .symtab ${MONITOR} -o ${MONITOR}
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different monitor "${CMAKE_CURRENT_BINARY_DIR}"
-        COMMENT "strip monitor .symtab section"
-        VERBATIM)
+# add_custom_command(TARGET ${MONITOR} POST_BUILD
+#         COMMAND strip -R .symtab ${MONITOR} -o ${MONITOR}
+#         COMMAND "${CMAKE_COMMAND}" -E copy_if_different monitor "${CMAKE_CURRENT_BINARY_DIR}"
+#         COMMENT "strip monitor .symtab section"
+#         VERBATIM)

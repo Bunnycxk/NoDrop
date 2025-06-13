@@ -13,11 +13,17 @@
 #else
 #include <sys/resource.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #define weak __attribute__((__weak__))
 #define hidden __attribute__((__visibility__("hidden")))
 #define weak_alias(old, new) \
 	extern __typeof(old) new __attribute__((__weak__, __alias__(#old)))
+
+struct nod_monitor_info {
+  int inited;
+  FILE *log_file;
+};
 #endif
  
 #define SYSCALL_EXIT_FAMILY(nr)     	((nr) == __NR_exit || (nr) == __NR_exit_group)
@@ -38,23 +44,17 @@ struct nod_stack_info {
 	int pkey;
 	int syscall_nr;
 	long exit_code;
-	unsigned long fsbase;
-	unsigned long hash;
   uint64_t stack_start;
   uint64_t stack_end;
 	char *buffer;
 	struct nod_buffer_info *buffer_info;
-};
-
-struct nod_monitor_info {
-	unsigned long fsbase;
+	unsigned long hash;
 };
 
 static unsigned long _unused
 nod_calc_hash(struct nod_stack_info *stack)
 {
-	return stack->fsbase ^ (stack->ioctl_fd + 42) ^ (stack->pkey - 42) ^ 
+	return (stack->ioctl_fd + 42) ^ (stack->pkey - 42) ^
 		(unsigned long)stack->buffer ^ (unsigned long)stack->buffer_info;
 }
-
 #endif //_COMMON_H_

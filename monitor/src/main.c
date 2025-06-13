@@ -13,9 +13,7 @@
 #define PATH_FMT CONFIG_STORE_PATH "/%u-%ld.buf"
 #endif
 
-static char path[100];
-static struct timeval tv;
-static unsigned int tid;
+extern struct nod_monitor_info __info;
 
 static const char *__print_format[PT_UINT64 + 1][PF_OCT + 1] = {
     [PT_NONE] = {"", "", "", "", ""},/*empty*/
@@ -117,33 +115,39 @@ int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__data)
     return 0;
 }
 
-void nod_monitor_init(int argc, char *argv[], char *env[]) {
+int nod_monitor_init(int argc, char *argv[], char *env[], struct nod_stack_info *p) {
+    char strbuf[128];
+    struct timeval tv;
+    int tid = (unsigned int)syscall(SYS_gettid);
+
     gettimeofday(&tv, NULL);
-    tid = (unsigned int)syscall(SYS_gettid);
-    sprintf((char *)path, PATH_FMT, tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
+    sprintf(strbuf, PATH_FMT, tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
+    __info.log_file = fopen(strbuf, "wb");
+    if (!__info.log_file) {
+        perror("Cannot open log file");
+        return -1;
+    }
+    return 0;
 }
 
-int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info) {
+int nod_monitor_main(int argc, char *argv[], char *env[], struct nod_stack_info *p) {
     char *ptr, *buffer_end;
     struct nod_event_hdr *hdr;
-    FILE *file;
+    struct nod_buffer_info *buffer_info = p->buffer_info;
+    FILE *log_file = __info.log_file;
 
-    if(!(file = fopen((const char *)path, "wb+"))) { // TEMP
-        perror("Cannot open log file");
-        return 0;
-    }
 
-    ptr = buffer;
+    ptr = p->buffer;
     buffer_end = ptr + buffer_info->tail;
     while (ptr < buffer_end) {
         hdr = (struct nod_event_hdr *)ptr;
         buffer_info->n_solved_evts++;
-        // _parse(file, hdr, (char *)(hdr + 1), 0);
-        fwrite(ptr, hdr->len, 1, file);
+        // _parse(log_file, hdr, (char *)(hdr + 1), 0);
+        fwrite(ptr, hdr->len, 1, log_file);
         ptr += hdr->len;
     }
 
-    fclose(file);
+    fflush(log_file);
     buffer_info->nevents = buffer_info->tail = 0;
     return 0;
 }

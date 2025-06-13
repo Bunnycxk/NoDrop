@@ -53,8 +53,6 @@ nod_init_procinfo(struct task_struct *task, struct nod_proc_info *p)
 {
     p->pid = task->pid;
     p->mm = task->mm;
-
-    p->ioctl_fd = -1;
     p->entry_addr = 0;
 
     if (p->stack_info.pkey > 0) mm_pkey_free(p->mm, p->stack_info.pkey);
@@ -102,7 +100,6 @@ nod_free_procinfo(struct nod_proc_info *p)
 struct nod_proc_info *
 nod_proc_acquire(enum nod_proc_status status, 
             enum nod_proc_status *pre,
-            int ioctl_fd, 
             struct task_struct *task)
 {
     struct nod_proc_info *p;
@@ -128,7 +125,7 @@ nod_proc_acquire(enum nod_proc_status status,
 
 success:
     if (pre)    *pre = p->status;
-    nod_proc_set_status(p, status, ioctl_fd);
+    nod_proc_set_status(p, status);
 out:
     return p;
 }

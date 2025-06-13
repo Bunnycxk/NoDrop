@@ -195,11 +195,9 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         memcpy(&p->stack_info, &stack, sizeof(stack));
 
         if(cmd == NOD_IOCTL_RESTORE_CONTEXT) 
-            nod_proc_set_context(p, p->stack_info.ioctl_fd);
+            nod_proc_set_context(p);
         else
-            nod_proc_set_security(p, p->stack_info.ioctl_fd);
-            
-        p->stack_info.ioctl_fd = -1;
+            nod_proc_set_security(p);
 
         break;
 

@@ -17,8 +17,8 @@
 // #define vpr_dbg(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
 
 // #define NOD_TEST(task) if (!(task->cred->uid.val == 1000))
-// #define NOD_TEST(task) if (!(STR_EQU(current->comm, "redis-server")))
-#define NOD_TEST(task) if (!(STR_EQU(current->comm, "getpid")))
+#define NOD_TEST(task) if (!(STR_EQU(current->comm, "redis-server")))
+// #define NOD_TEST(task) if (!(STR_EQU(current->comm, "getpid")))
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
 
@@ -73,7 +73,7 @@ int procinfo_init(void);
 void procinfo_destroy(void);
 struct nod_proc_info * 
 nod_proc_acquire(enum nod_proc_status status, enum nod_proc_status *pre, 
-				int ioctl_fd, struct task_struct *task);
+				struct task_struct *task);
 enum nod_proc_status nod_proc_release(struct task_struct *task);
 void nod_init_procinfo(struct task_struct *task, struct nod_proc_info *p);
 int nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p);

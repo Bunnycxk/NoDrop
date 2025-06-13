@@ -30,18 +30,20 @@ extern unsigned long __bdata;
 extern unsigned long __edata;
 
 __attribute__((section(NOD_SECTION_NAME)))
-struct nod_monitor_info __info = {.fsbase = 0};
+struct nod_monitor_info __info = {
+    .inited = 0,
+    .log_file = NULL,
+};
 
 static char mmheap_pool[NOD_MONITOR_MEM_SIZE];
 
 // declarations of processing logic
-int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info);
-weak void nod_monitor_init(int argc, char *argv[], char *env[]) {};
-weak void nod_monitor_exit(long code) {};
+int nod_monitor_main(int argc, char *argv[], char *env[], struct nod_stack_info *p);
+weak int nod_monitor_init(int argc, char *argv[], char *env[], struct nod_stack_info *p) { return 0; };
+weak void nod_monitor_exit(long code, struct nod_stack_info *p) {};
 
 // declarations of startup
-static void nod_start_main(int, char **, char **);
-static void nod_restore_context(struct nod_stack_info *p);
+static void nod_start_main(int argc, char *argv[], char *env[]);
 
 weak void init();
 weak void _fini();
@@ -62,75 +64,30 @@ START ": \n"
 );
 
 
-static void
-nod_restore_context(struct nod_stack_info *p) {
-    // uint64_t start, end, last_solved;
-    if (unlikely(SYSCALL_EXIT_FAMILY(p->syscall_nr))) {
-        nod_monitor_exit(p->syscall_nr);
-        // end = read_time();
-        // printf("\n-%llu-%llu-\n", end - start, p->buffer_info->n_solved_evts - last_solved);
-        // last_solved = p->buffer_info->n_solved_evts;
-        syscall(p->syscall_nr, p->exit_code);
-    } else {
-#ifdef NOD_PKEY_SUPPORT
-        if (likely(p->pkey != -1)) pkey_set(p->pkey, PKEY_DISABLE_WRITE);
-#endif
-        // end = read_time();
-        // printf("\n-%llu-%llu-\n", end - start, p->buffer_info->n_solved_evts - last_solved);
-        // last_solved = p->buffer_info->n_solved_evts;
-        ioctl(p->ioctl_fd, NOD_IOCTL_RESTORE_CONTEXT, p);
-    }
-    NOREACH
-}
-
-static void
-nod_initialize(struct nod_stack_info *p) {
-    syscall(SYS_arch_prctl, ARCH_GET_FS, (unsigned long) &p->fsbase);
-
-    if (unlikely(__info.fsbase == 0)) {
-        __info.fsbase = p->fsbase;
-        mprotect(&__info, (sizeof(__info) + getpagesize() - 1) / getpagesize(), PROT_READ);
-#ifdef NOD_PKEY_SUPPORT
-        if (p->pkey != -1) {
-            pkey_set(p->pkey, 0);
-            ASSERT_EXIT(likely(pkey_mprotect(&__bdata, (unsigned long) &__edata - (unsigned long) &__bdata,
-                                             PROT_READ | PROT_WRITE, p->pkey) != -1),
-                        "pkey_mprotect for data segenemtn failed",);
-            ASSERT_EXIT(likely(pkey_mprotect(p->stack_start, p->stack_end - p->stack_start,
-                                             PROT_READ | PROT_WRITE, p->pkey) != -1),
-                        "pkey_mprotect for stack segment failed",);
-        }
-#endif
-    }
-    nod_mmheap_init(mmheap_pool, sizeof(mmheap_pool));
-}
-
-static void
-nod_start_main(int argc, char **argv, char **env) {
-    struct nod_stack_info *p = (struct nod_stack_info *) argv[argc - 1];
-
-    if (unlikely(p->fsbase == 0)) {
-        nod_initialize(p);
-        nod_monitor_init(argc, argv, env);
-    } else {
+static int
+nod_init(int argc, char *argv[], char *env[], struct nod_stack_info *p) {
+    if (likely(__info.inited)) {
 #ifdef NOD_PKEY_SUPPORT
         if (p->pkey != -1) {
             pkey_set(p->pkey, PKEY_WR);
         }
 #endif
+        return 0;
     }
 
-    ASSERT_OUT(likely((p->ioctl_fd = open(NOD_IOCTL_PATH, O_RDWR)) >= 0),
+    ASSERT_EXIT(likely(nod_mmheap_init(mmheap_pool, sizeof(mmheap_pool)) == 0), "MMHeap init failed",);
+
+    ASSERT_EXIT(likely((p->ioctl_fd = open(NOD_IOCTL_PATH, O_RDWR)) >= 0),
                "Open " NOD_IOCTL_PATH " failed",);
 
     if (unlikely(p->buffer_info == NULL)) {
         p->buffer_info = (struct nod_buffer_info *) mmap(NULL, sizeof(struct nod_buffer_info),
                                                        PROT_READ | PROT_WRITE, MAP_SHARED, p->ioctl_fd, 0);
-        ASSERT_OUT(likely(p->buffer_info != MAP_FAILED), 
+        ASSERT_EXIT(likely(p->buffer_info != MAP_FAILED), 
                 "Cannot allocate buffer info", p->buffer_info = NULL);
 #ifdef NOD_PKEY_SUPPORT
         if (p->pkey != -1) {
-            ASSERT_OUT(likely(pkey_mprotect(p->buffer_info, sizeof(struct nod_buffer_info), PROT_READ | PROT_WRITE, p->pkey) != -1),
+            ASSERT_EXIT(likely(pkey_mprotect(p->buffer_info, sizeof(struct nod_buffer_info), PROT_READ | PROT_WRITE, p->pkey) != -1),
                     "pkey_mprotect for buffer info failed",
                     {
                        if (p->buffer_info) munmap(p->buffer_info, sizeof(struct nod_buffer_info));
@@ -143,7 +100,7 @@ nod_start_main(int argc, char **argv, char **env) {
     if (unlikely(p->buffer == NULL)) {
         p->buffer = (char *) mmap(NULL, p->buffer_info->buffer_size,
                                 PROT_READ, MAP_SHARED, p->ioctl_fd, 0);
-        ASSERT_OUT(likely(p->buffer != MAP_FAILED), 
+        ASSERT_EXIT(likely(p->buffer != MAP_FAILED), 
                 "Cannot allocate buffer", 
                 {
                    p->buffer = NULL;
@@ -152,7 +109,7 @@ nod_start_main(int argc, char **argv, char **env) {
                 });
 #ifdef NOD_PKEY_SUPPORT
         if (p->pkey != -1) {
-            ASSERT_OUT(likely(pkey_mprotect(p->buffer, BUFFER_SIZE, PROT_READ, p->pkey) != -1),
+            ASSERT_EXIT(likely(pkey_mprotect(p->buffer, BUFFER_SIZE, PROT_READ, p->pkey) != -1),
                     "pkey_mprotect for buffer failed", 
                     {
                         if (p->buffer)  munmap(p->buffer, p->buffer_info->buffer_size);
@@ -164,14 +121,50 @@ nod_start_main(int argc, char **argv, char **env) {
 #endif
     }
 
-    nod_monitor_main(p->buffer, p->buffer_info);
+    ASSERT_EXIT(likely(nod_monitor_init(argc, argv, env, p) == 0), "NOD_MONITOR_INIT failed",);
 
-out:
+#ifdef NOD_PKEY_SUPPORT
+    if (p->pkey != -1) {
+        pkey_set(p->pkey, 0);
+        ASSERT_EXIT(likely(pkey_mprotect(&__bdata, (unsigned long) &__edata - (unsigned long) &__bdata,
+                                            PROT_READ | PROT_WRITE, p->pkey) != -1),
+                    "pkey_mprotect for data segenemtn failed",);
+        ASSERT_EXIT(likely(pkey_mprotect(p->stack_start, p->stack_end - p->stack_start,
+                                            PROT_READ | PROT_WRITE, p->pkey) != -1),
+                    "pkey_mprotect for stack segment failed",);
+    }
+#endif
+    __info.inited = 1;
+    mprotect(&__info, sizeof(__info), PROT_READ);
+
+    return 0;
+}
+
+static void
+nod_fini(int argc, char **argv, char **env, struct nod_stack_info *p) {
     p->hash = nod_calc_hash(p);
-    nod_restore_context(p);
-
+    if (unlikely(SYSCALL_EXIT_FAMILY(p->syscall_nr))) {
+        nod_monitor_exit(p->syscall_nr, p);
+        syscall(p->syscall_nr, p->exit_code);
+    } else {
+#ifdef NOD_PKEY_SUPPORT
+        if (likely(p->pkey != -1)) 
+            pkey_set(p->pkey, PKEY_DISABLE_WRITE);
+#endif
+        ioctl(p->ioctl_fd, NOD_IOCTL_RESTORE_CONTEXT, p);
+    }
     /* NOT REACHABLE */
+    NOREACH
     ASSERT_EXIT(unlikely(0), "FATAL: not reachable",);
+}
+
+static void
+nod_start_main(int argc, char *argv[], char *env[]) {
+    struct nod_stack_info *p = (struct nod_stack_info *) argv[argc - 1];
+    if (likely(nod_init(argc, argv, env, p) == 0)) {
+        nod_monitor_main(argc, argv, env, p);
+    }
+    nod_fini(argc, argv, env, p);
 }
 
 hidden void _start_c(size_t *sp, size_t *dynv) {
@@ -180,11 +173,12 @@ hidden void _start_c(size_t *sp, size_t *dynv) {
 
     int argc = *sp;
     char **argv = (void *) (sp + 1);
+    char **env = argv + argc + 1;
 
     // start = read_time();
 
-    if (likely(__info.fsbase != 0)) {
-        nod_start_main(argc, argv, argv + argc + 1);
+    if (likely(__info.inited)) {
+        nod_start_main(argc, argv, env);
         return;
     }
 

@@ -10,7 +10,7 @@
 #include "common.h"
 
 enum nod_proc_status {
-    NOD_UNKNOWN = 0,
+  NOD_UNKNOWN = 0,
 	NOD_IN = 1,
 	NOD_OUT = 2,
 	NOD_CLONE = 3,
@@ -43,7 +43,6 @@ struct nod_proc_info {
 	pid_t pid;
 	struct mm_struct *mm;
 	struct nod_buffer buffer;
-	int ioctl_fd;
 	uint64_t entry_addr;
   uint64_t stack_addr;
   uint64_t stack_info_addr;
@@ -53,12 +52,12 @@ struct nod_proc_info {
 	struct nod_stack_info stack_info;
 };
 
-#define nod_proc_set_in(proc)			nod_proc_set_status(proc, NOD_IN, -1)
-#define nod_proc_set_out(proc)			nod_proc_set_status(proc, NOD_OUT, -1)
-#define nod_proc_set_security(proc, fd)	nod_proc_set_status(proc, NOD_RESTORE_SECURITY, fd)
-#define nod_proc_set_context(proc, fd)	nod_proc_set_status(proc, NOD_RESTORE_CONTEXT, fd)
-#define nod_proc_set_status(proc, _status, _fd) \
-	do{(proc)->status = (_status); (proc)->ioctl_fd = (_fd);}while(0)
+#define nod_proc_set_in(proc)			nod_proc_set_status(proc, NOD_IN)
+#define nod_proc_set_out(proc)			nod_proc_set_status(proc, NOD_OUT)
+#define nod_proc_set_security(proc)	nod_proc_set_status(proc, NOD_RESTORE_SECURITY)
+#define nod_proc_set_context(proc)	nod_proc_set_status(proc, NOD_RESTORE_CONTEXT)
+#define nod_proc_set_status(proc, _status) \
+	do { (proc)->status = (_status); } while(0)
 
 #define NOD_PROC_TRAVERSE_CONTINUE  0
 #define NOD_PROC_TRAVERSE_BREAK 	1
