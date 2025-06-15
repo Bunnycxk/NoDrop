@@ -14,12 +14,12 @@ int main(int argc, char *argv[]) {
     }
 
     loop = atoi(argv[1]);
-    ts = -rdtsc();
+    ts = -nod_rdtsc();
     for (int i = 0; i < loop; i++) {
         (void volatile)getpid();
     }
-    ts += rdtsc();
-    printf("getpid() called %d times, total ts: %lu ms\n", loop, tsc_to_nsec(ts) / 1000000);
+    ts += nod_rdtsc();
+    printf("getpid() called %d times, total ts: %lu ms\n", loop, nod_tsc_to_nsec(ts) / 1000000);
 
     return 0;
 }

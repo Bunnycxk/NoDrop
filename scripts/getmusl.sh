@@ -27,7 +27,7 @@ incdir=${ROOT}/musl/include
 libdir=${ROOT}/musl/lib
 ldso=/lib/ld-musl-x86_64.so.1
 
-cat > ${ROOT}/monitor/musl.specs << EOF
+cat > ${ROOT}/consumer/musl.specs << EOF
 %rename cpp_options old_cpp_options
 
 *cpp_options:

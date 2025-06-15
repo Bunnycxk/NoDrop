@@ -1,6 +1,6 @@
 set(CTRL ctrl)
 set(CTRL_SOURCES
-        nodrop-ctl.c
+        notamper-ctl.c
         ${PROJECT_SOURCE_DIR}/include/ioctl.h)
 include_directories(${PROJECT_SOURCE_DIR}/include)
 

@@ -77,7 +77,7 @@ add_custom_target(load
         COMMAND mkdir -p /tmp/${PROBE_NAME}
         COMMAND sudo insmod ${CMAKE_BINARY_DIR}/${PROBE_NAME}.ko
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-        DEPENDS kmodule monitor
+        DEPENDS kmodule consumer
         VERBATIM)
 set_target_properties(load PROPERTIES EXCLUDE_FROM_ALL TRUE)
 

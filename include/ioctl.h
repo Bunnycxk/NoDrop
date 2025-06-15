@@ -2,7 +2,7 @@
 #define NOD_IOCTL_H_
 
 
-#define NOD_IOCTL_NAME "nodrop"
+#define NOD_IOCTL_NAME "notamper"
 #define NOD_IOCTL_PATH "/proc/"NOD_IOCTL_NAME
 
 #ifdef __KERNEL__
