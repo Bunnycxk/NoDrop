@@ -30,11 +30,11 @@ extern unsigned long __bdata;
 extern unsigned long __edata;
 
 __attribute__((section(NOD_SECTION_NAME)))
-struct nod_monitor_info __info = {
+struct nod_monitor_info __nod_monitor_info = {
     .inited = 0,
 };
 
-static char mmheap_pool[NOD_MONITOR_MEM_SIZE];
+static char nod_mmheap_pool[NOD_MONITOR_MEM_SIZE];
 
 // declarations of processing logic
 int nod_monitor_main(int argc, char *argv[], char *env[], struct nod_stack_info *p);
@@ -65,7 +65,7 @@ START ": \n"
 
 static int
 nod_init(int argc, char *argv[], char *env[], struct nod_stack_info *p) {
-    if (likely(__info.inited)) {
+    if (likely(__nod_monitor_info.inited)) {
 #ifdef NOD_PKEY_SUPPORT
         if (p->pkey != -1) {
             pkey_set(p->pkey, PKEY_WR);
@@ -132,8 +132,8 @@ nod_init(int argc, char *argv[], char *env[], struct nod_stack_info *p) {
                     "pkey_mprotect for stack segment failed",);
     }
 #endif
-    __info.inited = 1;
-    mprotect(&__info, sizeof(__info), PROT_READ);
+    __nod_monitor_info.inited = 1;
+    // mprotect(&__info, sizeof(__info), PROT_READ);
 
     return 0;
 }
@@ -175,7 +175,7 @@ hidden void _start_c(size_t *sp, size_t *dynv) {
 
     // start = read_time();
 
-    if (likely(__info.inited)) {
+    if (likely(__nod_monitor_info.inited)) {
         nod_start_main(argc, argv, env);
         return;
     }
@@ -230,6 +230,6 @@ hidden void _start_c(size_t *sp, size_t *dynv) {
         *rel_addr = base + rel[2];
     }
 
-    ASSERT_EXIT(likely(nod_mmheap_init(mmheap_pool, sizeof(mmheap_pool)) == 0), "MMHeap init failed",);
+    ASSERT_EXIT(likely(nod_mmheap_init(nod_mmheap_pool, sizeof(nod_mmheap_pool)) == 0), "MMHeap init failed",);
     __libc_start_main((int (*)()) nod_start_main, *sp, (void *) (sp + 1), init, _fini, 0);
 }

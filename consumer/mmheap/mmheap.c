@@ -650,17 +650,14 @@ int nod_mmheap_posix_memalign(void **memptr, size_t alignment, size_t size) {
     *memptr = NULL;
     return 0;
   }
-  if (size & (size - 1)) {
-    return EINVAL; // Size must be a power of two
+  if (alignment & (alignment - 1)) {
+    return EINVAL; // Alignment must be a power of two
   }
-  if ((size / sizeof(void *)) * sizeof(void *) != size) {
-    return EINVAL; // Size too large
+  if (alignment & (sizeof(void *) - 1)) {
+    return EINVAL; // Alignment must be a multiple of sizeof(void *)
   }
   *memptr = nod_mmheap_aligned_alloc(size, alignment);
-  if (*memptr == NULL) {
-    return ENOMEM; // Memory allocation failed
-  }
-  return 0;
+  return *memptr == NULL ? ENOMEM : 0; // Return ENOMEM if allocation failed
 }
 
 void 

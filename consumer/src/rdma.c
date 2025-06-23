@@ -10,7 +10,7 @@ static int nod_sock_sync_data(int sockfd, size_t len, char *local,
   size_t total, once;
 
   rc = write(sockfd, local, len);
-  if (rc < len) {
+  if (rc < 0 || rc < len) {
     perror("write local data failed");
     goto out;
   }
@@ -168,6 +168,7 @@ int nod_rdma_ctrl_block_init(nod_rdma_ctrl_block_t *cb, const char *server_name,
                          IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ |
                              IBV_ACCESS_REMOTE_WRITE);
   if (cb->ib_mr == NULL) {
+    cb->buffer = NULL;
     perror("ibv_reg_mr failed");
     goto out_cq;
   }
