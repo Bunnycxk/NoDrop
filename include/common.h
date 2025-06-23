@@ -13,7 +13,6 @@
 #else
 #include <sys/resource.h>
 #include <stdint.h>
-#include <stdio.h>
 
 #define weak __attribute__((__weak__))
 #define hidden __attribute__((__visibility__("hidden")))
@@ -22,7 +21,6 @@
 
 struct nod_monitor_info {
   int inited;
-  FILE *log_file;
 };
 #endif
  
@@ -31,9 +29,13 @@ struct nod_monitor_info {
 #define likely(x) 	__builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
+#define B(x)  (x)
+#define KB(x) (x << 10)
+#define MB(x) (KB(x) << 10)
 #define NOD_MEM_RND_MASK 0x7ff
 #define NOD_SECTION_NAME ".monitor.info"
-#define NOD_MONITOR_MEM_SIZE (4 * 1024)
+// #define NOD_MONITOR_MEM_SIZE (4 * 1024)
+#define NOD_MONITOR_MEM_SIZE MB(2)
 
 #define SECOND_IN_NS 1000000000 // 1s = 1e9ns
 #define SECOND_IN_US 1000000 // 1s=1e6us

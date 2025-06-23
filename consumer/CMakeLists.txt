@@ -4,11 +4,31 @@ if (NOT HAS_STATIC_PIE)
     message(FATAL_ERROR "Compiler does NOT support --static-pie, try a new version greater than 8.0, current ${CMAKE_C_COMPILER_VERSION}")
 endif ()
 
+set(ENV{PKG_CONFIG_PATH} "${CMAKE_SOURCE_DIR}/rdma-core/build-musl/lib/pkgconfig")
+find_package(PkgConfig REQUIRED)
+pkg_search_module(IBVERBS REQUIRED libibverbs)
+pkg_search_module(MLX5 REQUIRED libmlx5)
+
+if (NOT IBVERBS_FOUND)
+    message(FATAL_ERROR "libibverbs not found, please install it via scripts/getibverbs or set PKG_CONFIG_PATH correctly")
+endif ()
+
+if (NOT MLX5_FOUND)
+    message(FATAL_ERROR "libmlx5 not found, please install it via scripts/getmlx5 or set PKG_CONFIG_PATH correctly")
+endif ()
+
+MESSAGE(STATUS "LIBIBVERBS_VERSION: ${IBVERBS_VERSION}")
+MESSAGE(STATUS "LIBMLX5_VERSION: ${MLX5_VERSION}")
+MESSAGE(STATUS "IBVERBS_INCLUDE_DIRS: ${IBVERBS_INCLUDE_DIRS}")
+MESSAGE(STATUS "IBVERBS_LIBRARY_DIRS: ${IBVERBS_LIBRARY_DIRS}")
+
 set(CONSUMER_SOURCES
     src/main.c
     src/startup.c
+    src/rdma.c
     src/dynlink.h
     src/pkeys.h
+    src/rdma.h
     mmheap/mmheap.c
     mmheap/mmheap.h
     ../kmodule/tables/dynamic_params_table.c
@@ -49,6 +69,10 @@ include_directories(
   src/
   ../include
   mmheap/
+  ${IBVERBS_INCLUDE_DIRS}
+)
+link_directories(
+  ${IBVERBS_LIBRARY_DIRS}
 )
 
 add_executable(${CONSUMER} ${CONSUMER_SOURCES})
@@ -57,3 +81,6 @@ add_custom_command(TARGET ${CONSUMER} POST_BUILD
   COMMAND "${CMAKE_COMMAND}" -E copy_if_different consumer "${CMAKE_CURRENT_BINARY_DIR}"
   COMMENT "strip consumer .symtab section"
   VERBATIM)
+
+# force linking with mlx5 to load the constructor
+target_link_libraries(${CONSUMER} -Wl,--whole-archive;-lmlx5;-Wl,--no-whole-archive ibverbs)

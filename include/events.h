@@ -882,6 +882,7 @@ enum nod_event_type {
 };
 
 struct nod_buffer_info {
+    // uint64_t ts;
     volatile uint64_t nevents;
     volatile uint64_t n_solved_evts;
     volatile uint32_t tail;

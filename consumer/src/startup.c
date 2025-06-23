@@ -32,7 +32,6 @@ extern unsigned long __edata;
 __attribute__((section(NOD_SECTION_NAME)))
 struct nod_monitor_info __info = {
     .inited = 0,
-    .log_file = NULL,
 };
 
 static char mmheap_pool[NOD_MONITOR_MEM_SIZE];
@@ -75,7 +74,6 @@ nod_init(int argc, char *argv[], char *env[], struct nod_stack_info *p) {
         return 0;
     }
 
-    ASSERT_EXIT(likely(nod_mmheap_init(mmheap_pool, sizeof(mmheap_pool)) == 0), "MMHeap init failed",);
 
     ASSERT_EXIT(likely((p->ioctl_fd = open(NOD_IOCTL_PATH, O_RDWR)) >= 0),
                "Open " NOD_IOCTL_PATH " failed",);
@@ -232,5 +230,6 @@ hidden void _start_c(size_t *sp, size_t *dynv) {
         *rel_addr = base + rel[2];
     }
 
+    ASSERT_EXIT(likely(nod_mmheap_init(mmheap_pool, sizeof(mmheap_pool)) == 0), "MMHeap init failed",);
     __libc_start_main((int (*)()) nod_start_main, *sp, (void *) (sp + 1), init, _fini, 0);
 }

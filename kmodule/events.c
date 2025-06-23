@@ -148,6 +148,7 @@ restart:
     }
 
     if (force) {
+        // p->buffer.info->ts = nod_rdtsc();
         cbret = nod_load_monitor(p);
     }
 
