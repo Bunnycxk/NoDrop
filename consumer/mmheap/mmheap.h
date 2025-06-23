@@ -4,6 +4,8 @@
 #define nod_mmheap_alloc            malloc
 #define nod_mmheap_calloc           calloc
 #define nod_mmheap_realloc          realloc
+#define nod_mmheap_aligned_alloc    aligned_alloc
+#define nod_mmheap_posix_memalign   posix_memalign
 #define nod_mmheap_free             free
 
 #define OFFSET_OF_FIELD(type, field)    \

@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stdint.h>
 #include <string.h>
 #include <stddef.h>
@@ -642,6 +643,24 @@ nod_mmheap_aligned_alloc(size_t size, size_t align)
     }
 
     return blk_prepare_used(blk, adjust_size);
+}
+
+int nod_mmheap_posix_memalign(void **memptr, size_t alignment, size_t size) {
+  if (size == 0) {
+    *memptr = NULL;
+    return 0;
+  }
+  if (size & (size - 1)) {
+    return EINVAL; // Size must be a power of two
+  }
+  if ((size / sizeof(void *)) * sizeof(void *) != size) {
+    return EINVAL; // Size too large
+  }
+  *memptr = nod_mmheap_aligned_alloc(size, alignment);
+  if (*memptr == NULL) {
+    return ENOMEM; // Memory allocation failed
+  }
+  return 0;
 }
 
 void 
