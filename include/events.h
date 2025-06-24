@@ -881,27 +881,31 @@ enum nod_event_type {
     NODE_EVENT_MAX = 150,
 };
 
-struct nod_buffer_info {
+typedef struct nod_rdma_protocal_s {
+  volatile uint64_t psn;
+  volatile int exited;
+} nod_rdma_protocal_t;
+
+typedef struct nod_buffer_info_s {
+    nod_rdma_protocal_t rdma_protocal;
     // uint64_t ts;
     volatile uint64_t nevents;
     volatile uint64_t n_solved_evts;
-    volatile uint32_t tail;
-    unsigned long buffer_size;
-};
+    volatile uint64_t tail;
+    uint64_t buffer_size;
+    char buffer[0];
+} nod_buffer_info_t;
 
 #ifdef __KERNEL__
-struct nod_overflow_page {
-    char *addr;
-    int filled;
-};
-
-struct nod_buffer {
-    char *buffer;
-	  char *str_storage;
-    struct nod_buffer_info *info;
-	  uint64_t event_count;
-    struct nod_overflow_page overflow;
-};
+#define NOD_BUFFER_OVERFLOW_FILL_FLAG   1
+#define nod_buffer_overflow_check(buffer) ((buffer->overflow_page & NOD_BUFFER_OVERFLOW_FILL_FLAG) == NOD_BUFFER_OVERFLOW_FILL_FLAG)
+typedef struct nod_buffer_s {
+    char *str_storage;
+    uint64_t overflow_page;
+    uint64_t event_count;
+    uint64_t ts;
+    nod_buffer_info_t   *info;
+} nod_buffer_t;
 #endif //__KERNEL__
 
 #define NOD_EVENT_HDR_MAGIC 0xCAFEBABE

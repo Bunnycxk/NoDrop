@@ -47,8 +47,8 @@ struct nod_stack_info {
 	long exit_code;
   uint64_t stack_start;
   uint64_t stack_end;
-	char *buffer;
-	struct nod_buffer_info *buffer_info;
+  uint64_t buffer_size;
+	nod_buffer_info_t *buffer_info;
 	unsigned long hash;
 };
 
@@ -56,6 +56,6 @@ static unsigned long _unused
 nod_calc_hash(struct nod_stack_info *stack)
 {
 	return (stack->ioctl_fd + 42) ^ (stack->pkey - 42) ^
-		(unsigned long)stack->buffer ^ (unsigned long)stack->buffer_info;
+		(unsigned long)stack->buffer_size ^ (unsigned long)stack->buffer_info;
 }
 #endif //_COMMON_H_

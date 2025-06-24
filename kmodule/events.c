@@ -46,23 +46,25 @@ do_record_one_event(struct nod_proc_info *p,
     int cbret, restart, force;
     size_t event_size;
     uint32_t freespace; 
+    char *overflow_page;
+    nod_buffer_info_t *info;
+    nod_buffer_t *buffer;
     struct event_filler_arguments args;
-    struct nod_buffer_info *info;
     struct nod_event_hdr *hdr;
-    struct nod_buffer *buffer;
     struct nod_event_statistic *stat;
 
     buffer = &p->buffer;
     info = buffer->info;
     stat = &per_cpu(g_stat, smp_processor_id());
 
-    if (unlikely(buffer->overflow.filled == 1)) {
-        info->tail = ((struct nod_event_hdr *)buffer->overflow.addr)->len;
+    if (unlikely(nod_buffer_overflow_check(buffer))) {
+        overflow_page = (char *)(buffer->overflow_page & PAGE_MASK);
+        info->tail = ((struct nod_event_hdr *)overflow_page)->len;
         info->nevents++;
         stat->n_evts++;
 
-        memmove(buffer->buffer, buffer->overflow.addr, info->tail);
-        buffer->overflow.filled = 0;
+        memmove(info->buffer, overflow_page, info->tail);
+        buffer->overflow_page &= PAGE_MASK;
     }
 
     freespace = info->buffer_size - info->tail;
@@ -82,15 +84,15 @@ restart:
         restart /* no free space for coming event data */) {
         // When the buffer is full, the next event log will temporarily write to the overflow page
         // The content of this page will be writen to buffer in the next syscall enter.
-        hdr = (struct nod_event_hdr *)buffer->overflow.addr;
-        args.buf_ptr = buffer->overflow.addr + sizeof(struct nod_event_hdr);
+        hdr = (struct nod_event_hdr *)(buffer->overflow_page & PAGE_MASK);
+        args.buf_ptr = (char *)&hdr[1];
         args.buffer_size = PAGE_SIZE - sizeof(struct nod_event_hdr);
-        
+
         force = 1;
-        buffer->overflow.filled = 1;
+        buffer->overflow_page |= NOD_BUFFER_OVERFLOW_FILL_FLAG;
     } else {
-        hdr = (struct nod_event_hdr *)(buffer->buffer + info->tail);
-        args.buf_ptr = buffer->buffer + info->tail + sizeof(struct nod_event_hdr);
+        hdr = (struct nod_event_hdr *)(info->buffer + info->tail);
+        args.buf_ptr = info->buffer + info->tail + sizeof(struct nod_event_hdr);
         args.buffer_size = freespace - sizeof(struct nod_event_hdr);
     }
 
@@ -128,7 +130,7 @@ restart:
             event_size = sizeof(struct nod_event_hdr) + args.arg_data_offset;
             hdr->len = event_size;
 
-            if (likely(buffer->overflow.filled == 0)) {
+            if (likely(!nod_buffer_overflow_check(buffer))) {
                 info->tail += event_size;
                 info->nevents++;
                 stat->n_evts++;
@@ -148,7 +150,7 @@ restart:
     }
 
     if (force) {
-        // p->buffer.info->ts = nod_rdtsc();
+        // p->buffer.ts = nod_rdtsc();
         cbret = nod_load_monitor(p);
     }
 
@@ -156,10 +158,10 @@ restart:
 }
 
 int
-init_buffer(struct nod_buffer *buffer)
+init_buffer(nod_buffer_t *buffer)
 {
     int ret;
-    unsigned long buffer_size = nod_buffer_size;
+    uint64_t buffer_size = (uint64_t)nod_buffer_size;
 
     if (buffer_size & (PAGE_SIZE - 1)) {
         ret = -EINVAL;
@@ -173,31 +175,29 @@ init_buffer(struct nod_buffer *buffer)
 		pr_err("Error allocating the string storage\n");
         goto init_buffer_err;
     }
-    
-    buffer->overflow.addr = (char *)__get_free_page(GFP_KERNEL);
-    if (!buffer->overflow.addr) {
+
+    buffer->overflow_page = (uint64_t)__get_free_page(GFP_KERNEL);
+    if (buffer->overflow_page == 0) {
         ret = -ENOMEM;
         pr_err("Error allocating the overflow page\n");
         goto init_buffer_err;
     }
-    buffer->overflow.filled = 0;
+    if ((buffer->overflow_page & PAGE_MASK) != buffer->overflow_page) {
+        pr_err("Overflow page address is not aligned to the page size\n");
+        ret = -EINVAL;
+        goto init_buffer_err;
+    }
 
-    buffer->info = vmalloc_user(sizeof(struct nod_buffer_info));
+    buffer->info = vmalloc_user(sizeof(nod_buffer_info_t) + buffer_size);
     if (!buffer->info) {
         ret = -ENOMEM;
         pr_err("Error allocating buffer memory\n");
         goto init_buffer_err;
     }
 
-    buffer->buffer = vmalloc_user(buffer_size);
-    if (!buffer->buffer) {
-        ret = -ENOMEM;
-        pr_err("Error allocating buffer memory\n");
-        goto init_buffer_err;
-    }
-
+    memset(buffer->info, 0, sizeof(nod_buffer_info_t));
     // // clear the buffer
-    // memset(buffer->buffer, 0, buffer_size);
+    // memset(buffer->info->buffer, 0, buffer_size);
 
     buffer->info->buffer_size = buffer_size;
     buffer->info->n_solved_evts = 0;
@@ -211,22 +211,16 @@ init_buffer_err:
 }
 
 void
-free_buffer(struct nod_buffer *buffer)
+free_buffer(nod_buffer_t *buffer)
 {
     if (buffer->info) {
         vfree(buffer->info);
         buffer->info = NULL;
     }
 
-    if (buffer->buffer) {
-        vfree(buffer->buffer);
-        buffer->buffer = NULL;
-    }
-    
-    if (buffer->overflow.addr) {
-        free_page((unsigned long)buffer->overflow.addr);
-        buffer->overflow.addr = 0;
-        buffer->overflow.filled = 0;
+    if (buffer->overflow_page) {
+        free_page((unsigned long)buffer->overflow_page & PAGE_MASK);
+        buffer->overflow_page = 0;
     }
 
     if (buffer->str_storage) {
@@ -236,12 +230,12 @@ free_buffer(struct nod_buffer *buffer)
 }
 
 void
-reset_buffer(struct nod_buffer *buffer, int flags) 
+reset_buffer(nod_buffer_t *buffer, int flags) 
 {
     if (flags & NOD_INIT_INFO) {
         buffer->info->nevents = 0;
         buffer->info->tail = 0;
-        buffer->overflow.filled = 0;
+        buffer->overflow_page &= PAGE_MASK;
     }
 
     if (flags & NOD_INIT_COUNT)

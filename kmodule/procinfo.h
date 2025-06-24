@@ -42,7 +42,7 @@ struct nod_proc_info {
 	struct hlist_node rcu;
 	pid_t pid;
 	struct mm_struct *mm;
-	struct nod_buffer buffer;
+	nod_buffer_t buffer;
 	uint64_t entry_addr;
   uint64_t stack_addr;
   uint64_t stack_info_addr;

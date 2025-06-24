@@ -91,9 +91,9 @@ int nod_mmap_check(unsigned long addr, unsigned long length);
 // event.c
 DECLARE_PER_CPU(struct nod_event_statistic, g_stat);
 int record_one_event(struct nod_proc_info *p, enum nod_event_type type, struct nod_event_data *event_datap);
-int init_buffer(struct nod_buffer *buffer);
-void free_buffer(struct nod_buffer *buffer);
-void reset_buffer(struct nod_buffer *buffer, int flags);
+int init_buffer(nod_buffer_t *buffer);
+void free_buffer(nod_buffer_t *buffer);
+void reset_buffer(nod_buffer_t *buffer, int flags);
 int nod_event_set_buffer_size(unsigned long size);
 int nod_event_get_buffer_size(unsigned long *size);
 

@@ -313,6 +313,7 @@ do_load_monitor(struct nod_proc_info *p, int argc, const char *argv[])
         goto out;
     }
 
+    p->stack_info.buffer_size = p->buffer.info->buffer_size;  // update buffer size
     retval = create_elf_tbls(&monitor_elf_ex, load_addr, interp_load_addr, 
                              &p->stack_info, &p->stack_info_addr, &p->stack_addr, argc, argv);
     if (retval) {

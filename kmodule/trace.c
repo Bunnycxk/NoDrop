@@ -148,7 +148,7 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
         // end = nod_nsecs();
         // pr_info("post %llu\n", end - start);
         nod_proc_set_out(p);
-        // vpr_info("ctxswtich ts:%llu\n", nod_rdtsc() - p->buffer.info->ts);
+        // vpr_info("ctxswtich ts:%llu\n", nod_rdtsc() - p->buffer.ts);
 
         break;
 

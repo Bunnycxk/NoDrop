@@ -1,3 +1,5 @@
+#include <errno.h>
+#include <fcntl.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -10,6 +12,8 @@
 #include "config.h"
 #include "events.h"
 #include "infiniband/verbs.h"
+#include "ioctl.h"
+#include "pkeys.h"
 #include "rdma.h"
 #include "tsc.h"
 
@@ -127,44 +131,14 @@ static _unused int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer,
   return 0;
 }
 
-int nod_monitor_init(int argc, char *argv[], char *env[],
-                     struct nod_stack_info *p) {
-  int rc;
-  rc = nod_rdma_ctrl_block_init(&rdma_cb, NOD_RDMA_SERVER_NAME,
-                                NOD_RDMA_SERVER_PORT, NOD_RDMA_DEVICE_NAME,
-                                p->buffer, p->buffer_info->buffer_size);
-  if (rc) {
-    perror("Failed to initialize RDMA control block");
-    goto out;
-  }
-
-  rc = nod_qp_connect(&rdma_cb, NOD_RDMA_IB_PORT, NOD_RDMA_IB_GID_INDEX);
-  if (rc) {
-    perror("Failed to connect QP");
-    goto out_cb;
-  }
-
-  return 0;
-
-out_cb:
-  nod_rdma_ctrl_block_fini(&rdma_cb);
-out:
-  return rc;
+static void nod_rdma_protocal_init(nod_rdma_protocal_t *protocal) {
+  protocal->psn = 0;
+  protocal->exited = 0;
 }
 
-void nod_monitor_exit(long code, struct nod_stack_info *p) {
-  nod_rdma_ctrl_block_fini(&rdma_cb);
-}
-
-int nod_monitor_main(int argc, char *argv[], char *env[],
-                     struct nod_stack_info *p) {
+static int nod_rdma_send(char *buffer, int buffer_size) {
   int rc;
-  uint64_t ts;
-  struct nod_buffer_info *buffer_info = p->buffer_info;
-
-  ts = -nod_rdtsc();
-  rc = nod_rdma_post_send(&rdma_cb, IBV_WR_RDMA_WRITE, p->buffer,
-                        buffer_info->buffer_size);
+  rc = nod_rdma_post_send(&rdma_cb, IBV_WR_RDMA_WRITE, buffer, buffer_size);
   if (rc) {
     perror("Failed to post RDMA write");
     return rc;
@@ -174,9 +148,107 @@ int nod_monitor_main(int argc, char *argv[], char *env[],
     perror("Failed to poll RDMA completion");
     return rc;
   }
-  ts += nod_rdtsc();
-  printf("RDMA write ts:%lu\n", ts);
-
-  buffer_info->nevents = buffer_info->tail = 0;
   return 0;
+}
+
+int nod_monitor_init(int argc, char *argv[], char *env[],
+                     struct nod_stack_info *p) {
+  int rc;
+  int ioctl_fd;
+  nod_buffer_info_t *buffer_info;
+  uint64_t rdma_buffer_size = sizeof(nod_buffer_info_t) + p->buffer_size;
+
+  ioctl_fd = open(NOD_IOCTL_PATH, O_RDWR);
+  if (ioctl_fd < 0) {
+    perror("Open " NOD_IOCTL_PATH " failed");
+    rc = -EIO;
+    goto out;
+  }
+
+  buffer_info = mmap(NULL, rdma_buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED,
+                     ioctl_fd, 0);
+  if (buffer_info == MAP_FAILED) {
+    perror("mmap buffer info failed");
+    rc = -ENOMEM;
+    goto out_ioctl;
+  }
+
+#ifdef NOD_PKEY_SUPPORT
+  if (p->pkey != -1) {
+    // Ensure the buffer_info is protected by the pkey
+    rc = pkey_mprotect(buffer_info, buffer_size, PROT_READ | PROT_WRITE,
+                       p->pkey);
+    if (rc) {
+      perror("pkey_mprotect for buffer info failed");
+      rc = -ENOMEM;
+      goto out_unmap;
+    }
+  }
+#endif // NOD_PKEY_SUPPORT
+
+  rc = nod_rdma_ctrl_block_init(&rdma_cb, NOD_RDMA_SERVER_NAME,
+                                NOD_RDMA_SERVER_PORT, NOD_RDMA_DEVICE_NAME,
+                                (char *)buffer_info, rdma_buffer_size);
+  if (rc) {
+    perror("Failed to initialize RDMA control block");
+    goto out_unmap;
+  }
+
+  rc = nod_qp_connect(&rdma_cb, NOD_RDMA_IB_PORT, NOD_RDMA_IB_GID_INDEX);
+  if (rc) {
+    perror("Failed to connect QP");
+    goto out_cb;
+  }
+
+  p->ioctl_fd = ioctl_fd;
+  p->buffer_info = buffer_info;
+  nod_rdma_protocal_init(&buffer_info->rdma_protocal);
+  return 0;
+
+out_cb:
+  nod_rdma_ctrl_block_fini(&rdma_cb);
+out_unmap:
+  munmap(buffer_info, rdma_buffer_size);
+out_ioctl:
+  close(ioctl_fd);
+out:
+  return rc;
+}
+
+void nod_monitor_exit(long code, struct nod_stack_info *p) {
+  uint64_t rdma_buffer_size = sizeof(nod_buffer_info_t) + p->buffer_size;
+  nod_buffer_info_t *buffer_info = p->buffer_info;
+
+  buffer_info->rdma_protocal.exited = 1;
+  if (nod_rdma_send((char *)buffer_info, sizeof(nod_buffer_info_t))) {
+    perror("Fail to send RDMA write for exit");
+  }
+  printf("psn: %lu\n", buffer_info->rdma_protocal.psn);
+
+  nod_rdma_ctrl_block_fini(&rdma_cb);
+  munmap(p->buffer_info, rdma_buffer_size);
+  close(p->ioctl_fd);
+}
+
+int nod_monitor_main(int argc, char *argv[], char *env[],
+                     struct nod_stack_info *p) {
+  int rc;
+  // uint64_t ts;
+  uint64_t rdma_buffer_size = sizeof(nod_buffer_info_t) + p->buffer_size;
+  nod_buffer_info_t *buffer_info = p->buffer_info;
+
+  // ts = -nod_rdtsc();
+  buffer_info->rdma_protocal.psn++;
+  rc = nod_rdma_send((char *)buffer_info, rdma_buffer_size);
+  if (rc) {
+    perror("Failed to send RDMA write");
+    goto out;
+  }
+  // ts += nod_rdtsc();
+  // printf("RDMA write ts:%lu\n", ts);
+
+  rc = 0;
+out:
+  buffer_info->nevents = buffer_info->tail = 0;
+  return rc;
 }

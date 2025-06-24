@@ -9,7 +9,6 @@
 #include "nodrop.h"
 #include "procinfo.h"
 
-#include "config.h"
 #include "common.h"
 #include "events.h"
 #include "ioctl.h"
@@ -37,7 +36,7 @@ __proc_buf_reset(struct nod_proc_info *this, unsigned long *ret, va_list args)
 static int
 __proc_bufcount_read(struct nod_proc_info *this, unsigned long *ret, va_list args)
 {
-    struct nod_buffer *buf = &this->buffer;
+    nod_buffer_t *buf = &this->buffer;
     struct buffer_count_info *info = va_arg(args, struct buffer_count_info *);
     info->event_count += buf->event_count;
     info->unflushed_count += buf->info->nevents;
@@ -68,18 +67,18 @@ nod_dev_read(struct file *filp, char __user *buf, size_t count, loff_t *off) {
 static int
 __proc_buf_copy(struct nod_proc_info *this, unsigned long *ret, va_list args)
 {
-    struct nod_buffer *buf = &this->buffer;
+    nod_buffer_info_t *info = this->buffer.info;
     char **ptr = va_arg(args, char **);
     uint64_t *count = va_arg(args, uint64_t *);
     uint64_t len = va_arg(args, uint64_t);
 
-    if (*count + buf->info->tail <= len) {
-        if (copy_to_user((void *)*ptr, (void *)buf->buffer, buf->info->tail)) {
+    if (*count + info->tail <= len) {
+        if (copy_to_user((void *)*ptr, (void *)info->buffer, info->tail)) {
             *ret = -EFAULT;
             return NOD_PROC_TRAVERSE_BREAK;
         }
-        *ptr += buf->info->tail;
-        *count += buf->info->tail;
+        *ptr += info->tail;
+        *count += info->tail;
         *ret = 0;
         return NOD_PROC_TRAVERSE_CONTINUE;
     } else {
@@ -233,9 +232,7 @@ out:
 static int nod_dev_mmap(struct file *filp, struct vm_area_struct *vma)
 {
     int ret;
-    long length;
     struct nod_proc_info *p;
-    const struct nod_buffer_info *info;
 
     p = filp->private_data;
     if (!p || p->status != NOD_IN) {
@@ -247,24 +244,10 @@ static int nod_dev_mmap(struct file *filp, struct vm_area_struct *vma)
         return -EIO;
     }
 
-    info = (const struct nod_buffer_info *)p->buffer.info;
-    length = vma->vm_end - vma->vm_start;
-    if (length == info->buffer_size) {
-        // To make RDMA happy, we allow write permission on the buffer
-        ret = remap_vmalloc_range(vma, p->buffer.buffer, 0);
-        if (ret < 0) {
-            vpr_err("remap_vmalloc_range for buffer failed (%d)\n", ret);
-            return ret;
-        }
-    } else if (length > 0) {
-        ret = remap_vmalloc_range(vma, (void *)info, 0); 
-        if (ret < 0) {
-            vpr_err("remap_vmalloc_range for buffer info failed (%d)\n", ret);
-            return ret;
-        }
-    } else {
-        vpr_err("invalid mmap size %ld\n", length);
-        return -EIO;
+    ret = remap_vmalloc_range(vma, (void *)p->buffer.info, 0);
+    if (ret < 0) {
+      vpr_err("remap_vmalloc_range for buffer info failed (%d)\n", ret);
+      return ret;
     }
 
     return 0;
@@ -275,15 +258,6 @@ static int nod_dev_release(struct inode *inode, struct file *filp)
     filp->private_data = NULL;
     return 0;
 }
-
-// static const struct file_operations g_nod_fops = {
-//     .open = nod_dev_open,
-//     .read = nod_dev_read,
-//     .unlocked_ioctl = nod_dev_ioctl,
-//     .release = nod_dev_release,
-//     .mmap = nod_dev_mmap,
-//     .owner = THIS_MODULE
-// };
 
 static const struct proc_ops g_nod_fops = {
     .proc_open = nod_dev_open,
