@@ -18,7 +18,6 @@
 #endif
 
 static nod_rdma_ctrl_block_t rdma_cb;
-static char *rdma_buffer;
 
 static const char *__print_format[PT_UINT64 + 1][PF_OCT + 1] = {
     [PT_NONE] = {"", "", "", "", ""}, /*empty*/
@@ -131,22 +130,12 @@ static _unused int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer,
 int nod_monitor_init(int argc, char *argv[], char *env[],
                      struct nod_stack_info *p) {
   int rc;
-  size_t rdma_buffer_size = p->buffer_info->buffer_size;
-
-  rdma_buffer = mmap(NULL, rdma_buffer_size, PROT_READ | PROT_WRITE,
-                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  if (rdma_buffer == MAP_FAILED) {
-    perror("Failed to mmap RDMA buffer");
-    rc = -EINVAL;
-    goto out;
-  }
-
   rc = nod_rdma_ctrl_block_init(&rdma_cb, NOD_RDMA_SERVER_NAME,
                                 NOD_RDMA_SERVER_PORT, NOD_RDMA_DEVICE_NAME,
-                                rdma_buffer, rdma_buffer_size);
+                                p->buffer, p->buffer_info->buffer_size);
   if (rc) {
     perror("Failed to initialize RDMA control block");
-    goto out_free;
+    goto out;
   }
 
   rc = nod_qp_connect(&rdma_cb, NOD_RDMA_IB_PORT, NOD_RDMA_IB_GID_INDEX);
@@ -159,15 +148,12 @@ int nod_monitor_init(int argc, char *argv[], char *env[],
 
 out_cb:
   nod_rdma_ctrl_block_fini(&rdma_cb);
-out_free:
-  munmap(rdma_buffer, rdma_buffer_size);
 out:
   return rc;
 }
 
 void nod_monitor_exit(long code, struct nod_stack_info *p) {
   nod_rdma_ctrl_block_fini(&rdma_cb);
-  munmap(rdma_buffer, p->buffer_info->buffer_size);
 }
 
 int nod_monitor_main(int argc, char *argv[], char *env[],
@@ -176,10 +162,8 @@ int nod_monitor_main(int argc, char *argv[], char *env[],
   uint64_t ts;
   struct nod_buffer_info *buffer_info = p->buffer_info;
 
-  memcpy(rdma_buffer, p->buffer, buffer_info->buffer_size);
-
   ts = -nod_rdtsc();
-  rc = nod_rdma_post_send(&rdma_cb, IBV_WR_RDMA_WRITE, rdma_buffer,
+  rc = nod_rdma_post_send(&rdma_cb, IBV_WR_RDMA_WRITE, p->buffer,
                         buffer_info->buffer_size);
   if (rc) {
     perror("Failed to post RDMA write");

@@ -97,7 +97,7 @@ nod_init(int argc, char *argv[], char *env[], struct nod_stack_info *p) {
 
     if (unlikely(p->buffer == NULL)) {
         p->buffer = (char *) mmap(NULL, p->buffer_info->buffer_size,
-                                PROT_READ, MAP_SHARED, p->ioctl_fd, 0);
+                                PROT_READ | PROT_WRITE, MAP_SHARED, p->ioctl_fd, 0);
         ASSERT_EXIT(likely(p->buffer != MAP_FAILED), 
                 "Cannot allocate buffer", 
                 {
@@ -107,7 +107,7 @@ nod_init(int argc, char *argv[], char *env[], struct nod_stack_info *p) {
                 });
 #ifdef NOD_PKEY_SUPPORT
         if (p->pkey != -1) {
-            ASSERT_EXIT(likely(pkey_mprotect(p->buffer, BUFFER_SIZE, PROT_READ, p->pkey) != -1),
+            ASSERT_EXIT(likely(pkey_mprotect(p->buffer, BUFFER_SIZE, PROT_READ | PROT_WRITE, p->pkey) != -1),
                     "pkey_mprotect for buffer failed", 
                     {
                         if (p->buffer)  munmap(p->buffer, p->buffer_info->buffer_size);

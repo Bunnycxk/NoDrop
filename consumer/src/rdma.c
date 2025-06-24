@@ -248,14 +248,14 @@ static int nod_qp_modify_to_init(nod_rdma_ctrl_block_t *cb, int ib_port) {
   return ibv_modify_qp(cb->ib_qp, &attr, mask);
 }
 
-static int nod_qp_modify_to_rtr(nod_rdma_ctrl_block_t *cb, int ib_port,
+static int nod_qp_modify_to_rtr(nod_rdma_ctrl_block_t *cb, int ib_port, int ib_gid_index,
                                 nod_rdma_prop_t *remote_prop) {
   int mask;
   struct ibv_qp_attr attr;
 
   /* RTR QP */
   attr.qp_state = IBV_QPS_RTR;
-  attr.path_mtu = IBV_MTU_4096;
+  attr.path_mtu = IBV_MTU_2048;
   attr.dest_qp_num = remote_prop->qpn; // Remote QP number
   attr.rq_psn = remote_prop->psn;      // Remote Packet Sequence Number
   attr.max_dest_rd_atomic = 1;
@@ -268,7 +268,7 @@ static int nod_qp_modify_to_rtr(nod_rdma_ctrl_block_t *cb, int ib_port,
   attr.ah_attr.port_num = ib_port;
 
   attr.ah_attr.grh.hop_limit = 1;
-  attr.ah_attr.grh.sgid_index = 1;
+  attr.ah_attr.grh.sgid_index = ib_gid_index;
   memmove(&attr.ah_attr.grh.dgid, remote_prop->gid,
           sizeof(attr.ah_attr.grh.dgid));
 
@@ -365,7 +365,7 @@ int nod_qp_connect(nod_rdma_ctrl_block_t *cb, int ib_port, int ib_gid_index) {
   printf("QP state changed to INIT\n");
 
   /* Modify QP to RTR state */
-  rc = nod_qp_modify_to_rtr(cb, ib_port, &remote_prop);
+  rc = nod_qp_modify_to_rtr(cb, ib_port, ib_gid_index, &remote_prop);
   if (rc) {
     perror("Failed to modify QP to RTR");
     return rc;
@@ -414,9 +414,7 @@ int nod_rdma_poll(nod_rdma_ctrl_block_t *cb) {
   struct ibv_wc wc;
 
   do {
-    // ts = -nod_rdtsc();
     rc = ibv_poll_cq(cb->ib_cq, 1, &wc);
-    // ts += nod_rdtsc();
   } while (rc == 0);
 
   if (rc < 0) {

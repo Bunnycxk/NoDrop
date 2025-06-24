@@ -250,11 +250,7 @@ static int nod_dev_mmap(struct file *filp, struct vm_area_struct *vma)
     info = (const struct nod_buffer_info *)p->buffer.info;
     length = vma->vm_end - vma->vm_start;
     if (length == info->buffer_size) {
-        if (vma->vm_flags & VM_WRITE) {
-            vpr_err("invalid mmap flags 0x%lx\n", vma->vm_flags);
-            return -EINVAL;
-        }
-
+        // To make RDMA happy, we allow write permission on the buffer
         ret = remap_vmalloc_range(vma, p->buffer.buffer, 0);
         if (ret < 0) {
             vpr_err("remap_vmalloc_range for buffer failed (%d)\n", ret);
