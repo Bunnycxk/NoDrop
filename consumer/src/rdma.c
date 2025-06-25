@@ -4,105 +4,113 @@
 #include <stdio.h>
 #include <unistd.h>
 
-static int nod_sock_sync_data(int sockfd, size_t len, char *local,
-                              char *remote) {
-  int rc;
-  size_t total, once;
-
-  rc = write(sockfd, local, len);
-  if (rc < 0 || rc < len) {
-    perror("write local data failed");
-    goto out;
-  }
-
-  rc = 0;
-  for (total = 0; total < len; total += once) {
-    once = read(sockfd, remote, len);
+ssize_t nod_read_from_socket(int sockfd, void *buffer, size_t len) {
+  size_t total = 0, remaining;
+  ssize_t once = 0;
+  while (total < len) {
+    remaining = len - total;
+    once = read(sockfd, (char *)buffer + total, remaining);
     if (once == 0) {
+      // 连接关闭
       fprintf(stderr, "read returned 0 bytes, connection closed\n");
-      rc = -1;
-      break;
+      return -1;
     } else if (once < 0) {
-      perror("read remote data failed");
-      rc = once;
-      break;
+      if (errno == EINTR) {
+        // 如果是由于信号中断，重新尝试读取
+        continue;
+      } else {
+        // 其他错误
+        perror("read remote data failed");
+        return once;
+      }
+    } else {
+      // 成功读取数据，更新 total
+      total += once;
     }
   }
 
-out:
+  return total;
+}
+
+ssize_t nod_write_to_socket(int sockfd, const void *buffer, size_t len) {
+  size_t total = 0, remaining;
+  ssize_t once = 0;
+  while (total < len) {
+    remaining = len - total;
+    once = write(sockfd, (char *)buffer + total, remaining);
+    if (once == 0) {
+      fprintf(stderr, "write returned 0 bytes, connection closed\n");
+      return -1;
+    } else if (once < 0) {
+      if (errno == EINTR) {
+        continue;
+      } else {
+        perror("write local data failed");
+        return once;
+      }
+    }
+    total += once;
+  }
+
+  return total;
+}
+
+static int nod_sock_sync_data(int sockfd, size_t len, const char *local,
+                              char *remote) {
+  int rc;
+
+  rc = nod_write_to_socket(sockfd, local, len);
+  if (rc != len) {
+    return rc;
+  }
+
+  rc = nod_read_from_socket(sockfd, remote, len);
+  if (rc != len) {
+    return rc;
+  }
+
   return rc;
 }
 
-static int nod_sock_connect(const char *server_name, int port) {
-  int rc, sockfd, listenfd;
+int nod_rdma_sock_connect(const char *server_name, int port) {
+  int rc, sockfd;
   struct sockaddr_in server_addr;
 
   memset(&server_addr, 0, sizeof(server_addr));
   server_addr.sin_family = AF_INET;
   server_addr.sin_port = htons(port);
 
-  rc = socket(AF_INET, SOCK_STREAM, 0);
-  if (rc < 0) {
+  sockfd = socket(AF_INET, SOCK_STREAM, 0);
+  if (sockfd < 0) {
     perror("socket");
-    goto out;
+    return sockfd;
   }
 
-  sockfd = rc;
-  if (server_name == NULL) {
-    /* Server */
-    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    listenfd = sockfd;
-
-    rc = bind(listenfd, (struct sockaddr *)&server_addr, sizeof(server_addr));
-    if (rc < 0) {
-      perror("bind");
-      goto out_close_socket;
-    }
-
-    rc = listen(listenfd, 1);
-    if (rc < 0) {
-      perror("listen");
-      goto out_close_bind;
-    }
-    printf("Waiting for connection on port %d...\n", port);
-    rc = accept(listenfd, NULL, 0);
-    if (rc < 0) {
-      perror("accept");
-      goto out_close_bind;
-    }
-    sockfd = rc;
-  } else {
-    server_addr.sin_addr.s_addr = inet_addr(server_name);
-    /* Client */
-    rc = connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr));
-    if (rc < 0) {
-      perror("connect");
-      goto out_close_socket;
-    }
+  server_addr.sin_addr.s_addr = inet_addr(server_name);
+  /* Client */
+  rc = connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr));
+  if (rc < 0) {
+    perror("connect");
+    close(sockfd);
+    return rc;
   }
 
   return sockfd;
-
-out_close_bind:
-  close(listenfd);
-out_close_socket:
-  close(sockfd);
-out:
-  return rc;
 }
 
-static inline int nod_remote_sync(nod_rdma_ctrl_block_t *cb,
-                                  const char *prompt) {
+static inline int nod_remote_sync(int sockfd) {
+  int rc;
   char sync_barrier[sizeof(NOD_RDMA_SYNC_MAGIC)];
-  if (prompt) {
-    puts(prompt);
-  }
-  return nod_sock_sync_data(cb->sockfd, sizeof(NOD_RDMA_SYNC_MAGIC),
+  rc = nod_sock_sync_data(sockfd, sizeof(NOD_RDMA_SYNC_MAGIC),
                             (char *)NOD_RDMA_SYNC_MAGIC, (char *)sync_barrier);
+  if (rc != sizeof(NOD_RDMA_SYNC_MAGIC)) {
+    fprintf(stderr, "Failed to sync with remote: %s\n", strerror(errno));
+    return rc < 0 ? rc : -EIO;
+  }
+  return 0;
 }
 
-int nod_rdma_ctrl_block_init(nod_rdma_ctrl_block_t *cb, const char *server_name,
-                             uint32_t server_port, const char *device_name,
+int nod_rdma_ctrl_block_init(nod_rdma_ctrl_block_t *cb, const char *device_name,
                              char *buffer, uint64_t buffer_size) {
   int i, num_dev;
   struct ibv_qp_init_attr qb_init_attr;
@@ -110,21 +118,13 @@ int nod_rdma_ctrl_block_init(nod_rdma_ctrl_block_t *cb, const char *server_name,
 
   memset(cb, 0, sizeof(nod_rdma_ctrl_block_t));
 
-  cb->sockfd = nod_sock_connect(server_name, server_port);
-  if (cb->sockfd < 0) {
-    perror("socket failed");
-    goto out;
-  }
-
-  printf("TCP connection established to %s:%u\n", server_name, server_port);
-
   dev_list = ibv_get_device_list(&num_dev);
   if (dev_list == NULL) {
     fprintf(stderr, "Failed to get IB devices list\n");
-    goto out_sock;
+    goto out;
   }
 
-  printf("found %d device(s)\n", num_dev);
+  // printf("found %d device(s)\n", num_dev);
   if (num_dev == 0) {
     fprintf(stderr, "No IB devices found\n");
     goto out_dev_list;
@@ -173,8 +173,8 @@ int nod_rdma_ctrl_block_init(nod_rdma_ctrl_block_t *cb, const char *server_name,
     goto out_cq;
   }
 
-  printf("regsitered MR: addr=%p lkey=0x%x rkey=0x%x\n", cb->buffer,
-         cb->ib_mr->lkey, cb->ib_mr->rkey);
+  // printf("regsitered MR: addr=%p lkey=0x%x rkey=0x%x\n", cb->buffer,
+  //        cb->ib_mr->lkey, cb->ib_mr->rkey);
 
   memset(&qb_init_attr, 0, sizeof(qb_init_attr));
   qb_init_attr.send_cq = cb->ib_cq;
@@ -190,7 +190,7 @@ int nod_rdma_ctrl_block_init(nod_rdma_ctrl_block_t *cb, const char *server_name,
     goto out_mr;
   }
 
-  printf("QP created with QP number: 0x%x\n", cb->ib_qp->qp_num);
+  // printf("QP created: QPN=0x%x\n", cb->ib_qp->qp_num);
 
   ibv_free_device_list(dev_list);
   return 0;
@@ -205,8 +205,6 @@ out_device:
   ibv_close_device(cb->ib_ctx);
 out_dev_list:
   ibv_free_device_list(dev_list);
-out_sock:
-  close(cb->sockfd);
 out:
   return -1;
 }
@@ -227,9 +225,6 @@ void nod_rdma_ctrl_block_fini(nod_rdma_ctrl_block_t *cb) {
   if (cb->ib_ctx) {
     ibv_close_device(cb->ib_ctx);
   }
-  if (cb->sockfd >= 0) {
-    close(cb->sockfd);
-  }
 }
 
 static int nod_qp_modify_to_init(nod_rdma_ctrl_block_t *cb, int ib_port) {
@@ -248,7 +243,8 @@ static int nod_qp_modify_to_init(nod_rdma_ctrl_block_t *cb, int ib_port) {
   return ibv_modify_qp(cb->ib_qp, &attr, mask);
 }
 
-static int nod_qp_modify_to_rtr(nod_rdma_ctrl_block_t *cb, int ib_port, int ib_gid_index,
+static int nod_qp_modify_to_rtr(nod_rdma_ctrl_block_t *cb, int ib_port,
+                                int ib_gid_index,
                                 nod_rdma_prop_t *remote_prop) {
   int mask;
   struct ibv_qp_attr attr;
@@ -295,7 +291,7 @@ static int nod_qp_modify_to_rts(nod_rdma_ctrl_block_t *cb) {
   return ibv_modify_qp(cb->ib_qp, &attr, mask);
 }
 
-int nod_qp_connect(nod_rdma_ctrl_block_t *cb, int ib_port, int ib_gid_index) {
+int nod_qp_connect(nod_rdma_ctrl_block_t *cb, int ib_port, int ib_gid_index, int sockfd) {
   int rc;
   union ibv_gid ib_gid;
   struct ibv_port_attr port_attr;
@@ -323,7 +319,7 @@ int nod_qp_connect(nod_rdma_ctrl_block_t *cb, int ib_port, int ib_gid_index) {
   memmove(local_prop.gid, &ib_gid, sizeof(ib_gid));
 
   /* Let the remote side be aware of the properties of this side */
-  rc = nod_sock_sync_data(cb->sockfd, sizeof(nod_rdma_prop_t),
+  rc = nod_sock_sync_data(sockfd, sizeof(nod_rdma_prop_t),
                           (char *)&local_prop, (char *)&tmp_prop);
   if (rc < 0) {
     perror("Failed to exchange connection data");
@@ -339,22 +335,22 @@ int nod_qp_connect(nod_rdma_ctrl_block_t *cb, int ib_port, int ib_gid_index) {
   remote_prop.rkey = ntohl(tmp_prop.rkey); // Remote Key
   remote_prop.lid = ntohs(tmp_prop.lid);   // Remote LID
   memmove(remote_prop.gid, tmp_prop.gid, sizeof(remote_prop.gid));
-
-  printf("Remote buffer address = 0x%lx\n",
-         NOD_RDMA_TO_ADDRESS(remote_prop.addr_hi, remote_prop.addr_lo));
-  printf("Remote QP number = 0x%x\n", remote_prop.qpn);
-  printf("Remote Key = 0x%x\n", remote_prop.rkey);
-  printf("Remote GID = "
-         "%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:"
-         "%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x\n",
-         remote_prop.gid[0], remote_prop.gid[1], remote_prop.gid[2],
-         remote_prop.gid[3], remote_prop.gid[4], remote_prop.gid[5],
-         remote_prop.gid[6], remote_prop.gid[7], remote_prop.gid[8],
-         remote_prop.gid[9], remote_prop.gid[10], remote_prop.gid[11],
-         remote_prop.gid[12], remote_prop.gid[13], remote_prop.gid[14],
-         remote_prop.gid[15]);
   memmove(&cb->remote_prop, &remote_prop,
           sizeof(nod_rdma_prop_t)); // Save remote properties
+
+  // printf("Remote buffer address = 0x%lx\n",
+  //        NOD_RDMA_TO_ADDRESS(remote_prop.addr_hi, remote_prop.addr_lo));
+  // printf("Remote QP number = 0x%x\n", remote_prop.qpn);
+  // printf("Remote Key = 0x%x\n", remote_prop.rkey);
+  // printf("Remote GID = "
+  //        "%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:"
+  //        "%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x\n",
+  //        remote_prop.gid[0], remote_prop.gid[1], remote_prop.gid[2],
+  //        remote_prop.gid[3], remote_prop.gid[4], remote_prop.gid[5],
+  //        remote_prop.gid[6], remote_prop.gid[7], remote_prop.gid[8],
+  //        remote_prop.gid[9], remote_prop.gid[10], remote_prop.gid[11],
+  //        remote_prop.gid[12], remote_prop.gid[13], remote_prop.gid[14],
+  //        remote_prop.gid[15]);
 
   /* Init QP */
   rc = nod_qp_modify_to_init(cb, ib_port);
@@ -362,7 +358,7 @@ int nod_qp_connect(nod_rdma_ctrl_block_t *cb, int ib_port, int ib_gid_index) {
     perror("Failed to initialize QP");
     return rc;
   }
-  printf("QP state changed to INIT\n");
+  // printf("QP state changed to INIT\n");
 
   /* Modify QP to RTR state */
   rc = nod_qp_modify_to_rtr(cb, ib_port, ib_gid_index, &remote_prop);
@@ -370,7 +366,7 @@ int nod_qp_connect(nod_rdma_ctrl_block_t *cb, int ib_port, int ib_gid_index) {
     perror("Failed to modify QP to RTR");
     return rc;
   }
-  printf("QP state changed to RTR\n");
+  // printf("QP state changed to RTR\n");
 
   /* Modify QP to RTS state */
   rc = nod_qp_modify_to_rts(cb);
@@ -378,10 +374,10 @@ int nod_qp_connect(nod_rdma_ctrl_block_t *cb, int ib_port, int ib_gid_index) {
     perror("Failed to modify QP to RTS");
     return rc;
   }
-  printf("QP state changed to RTS\n");
+  // printf("QP state changed to RTS\n");
 
   /* Now, QP is ready to send, wait remote side completion */
-  return nod_remote_sync(cb, "Waiting for remote side to complete connection");
+  return nod_remote_sync(sockfd);
 }
 
 int nod_rdma_post_send(nod_rdma_ctrl_block_t *cb, enum ibv_wr_opcode opcode,
