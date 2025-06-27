@@ -16,10 +16,11 @@
 #define NOD_RDMA_TO_ADDRESS(hi, lo) (((uint64_t)hi << 32) | ((uint64_t)lo))
 
 typedef struct nod_rdma_config_s {
-  char device_name[64]; /* RDMA device name */
+  char device_name[16]; /* RDMA device name */
   int ib_port;
   int ib_gid_index; /* IB port and GID index */
   int init_psn;
+  int pid;
   uint64_t buffer_size;
 } nod_rdma_config_t;
 

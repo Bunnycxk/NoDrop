@@ -280,7 +280,7 @@ elf_load_binary(struct elfhdr *elf_ex,
                 *map_addr = _addr;
             error = _addr;
             if (BAD_ADDR(_addr)) {
-                vpr_dbg("map segment at %llx failed (%d)\n", load_addr + vaddr, _addr);
+                vpr_err("map segment at %llx failed (%d)\n", load_addr + vaddr, (int)_addr);
                 goto out;
             }
 

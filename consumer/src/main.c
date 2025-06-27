@@ -163,6 +163,7 @@ int nod_monitor_init(int argc, char *argv[], char *env[],
     .ib_port = NOD_RDMA_IB_PORT,
     .init_psn = NOD_RDMA_INIT_PSN, // Initial PSN can be set to 0
     .buffer_size = p->buffer_size,
+    .pid = (unsigned int)syscall(SYS_gettid),
   };
   strncpy(rdma_config.device_name, NOD_RDMA_DEVICE_NAME,
           sizeof(rdma_config.device_name) - 1);
@@ -195,6 +196,10 @@ int nod_monitor_init(int argc, char *argv[], char *env[],
   }
 #endif // NOD_PKEY_SUPPORT
 
+  p->ioctl_fd = ioctl_fd;
+  p->buffer_info = buffer_info;
+  return 0;
+
   sockfd = nod_rdma_sock_connect(NOD_RDMA_SERVER_NAME, NOD_RDMA_SERVER_PORT);
   if (sockfd < 0) {
     perror("Failed to connect to RDMA server");
@@ -205,7 +210,7 @@ int nod_monitor_init(int argc, char *argv[], char *env[],
   rc = nod_write_to_socket(sockfd, (void *)&rdma_config, sizeof(rdma_config));
   if (rc != sizeof(rdma_config)) {
     perror("Failed to send RDMA config to server");
-    rc = rc >= 0 ?: -EIO;
+    rc = rc >= 0 ? rc : -EIO;
     goto out_socket;
   }
 
@@ -223,8 +228,6 @@ int nod_monitor_init(int argc, char *argv[], char *env[],
   }
 
   close(sockfd);
-  p->ioctl_fd = ioctl_fd;
-  p->buffer_info = buffer_info;
   nod_rdma_protocal_init(&buffer_info->rdma_protocal);
   return 0;
 
@@ -250,18 +253,17 @@ void nod_monitor_exit(long code, struct nod_stack_info *p) {
   }
 
   nod_rdma_ctrl_block_fini(&rdma_cb);
-  munmap(p->buffer_info, rdma_buffer_size);
+  munmap(buffer_info, rdma_buffer_size);
   close(p->ioctl_fd);
 }
 
 int nod_monitor_main(int argc, char *argv[], char *env[],
                      struct nod_stack_info *p) {
   int rc;
-  // uint64_t ts;
-  uint64_t rdma_buffer_size = sizeof(nod_buffer_info_t) + p->buffer_size;
   nod_buffer_info_t *buffer_info = p->buffer_info;
+  uint64_t rdma_buffer_size = sizeof(nod_buffer_info_t) + buffer_info->tail;
 
-  // ts = -nod_rdtsc();
+  // uint64_t ts = -nod_rdtsc();
   buffer_info->rdma_protocal.psn++;
   rc = nod_rdma_send((char *)buffer_info, rdma_buffer_size);
   if (rc) {

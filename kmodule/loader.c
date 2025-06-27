@@ -11,9 +11,9 @@
 #include <linux/vmalloc.h>
 
 #include "nodrop.h"
-#include "syscall.h"
 #include "procinfo.h"
 
+#include "syscall.h"
 #include "common.h"
 #include "tsc.h"
 #include "config.h"
@@ -24,6 +24,8 @@ static struct elfhdr   monitor_elf_ex, interp_elf_ex;
 static struct file *filp_monitor, *filp_interpreter;
 
 static unsigned long monitor_info_off;
+
+static DEFINE_MUTEX(loader_lock);
 
 #define MAPPING_OK          0 
 #define MAPPING_NEXT        1
@@ -119,8 +121,8 @@ create_elf_tbls(struct elfhdr *exec,
 #define STACK_ADD(sp, items)    ((elf_addr_t __user *)(sp) - (items))
 #define STACK_ALLOC(sp, len)    ({(sp) -= (len); sp;})
 
-    int i, envc, elf_info_idx, items;
-    uint64_t p, arg_start, env_start;
+    int rc, i, envc, elf_info_idx, items;
+    uint64_t p, stack_start, arg_start, env_start;
     unsigned char k_rand_bytes[16];
 
     elf_addr_t __user *sp;
@@ -128,29 +130,33 @@ create_elf_tbls(struct elfhdr *exec,
     elf_addr_t *elf_info = NULL;
 
     // allocate a dedicate stack for the consumer
-    p = create_stack_with_red_zone(0, CONFIG_MONITOR_STACK_SIZE);
-    if (BAD_ADDR(p))
+    stack_start = create_stack_with_red_zone(0, CONFIG_MONITOR_STACK_SIZE);
+    if (BAD_ADDR(stack_start)) {
+        vpr_err("Failed to allocate stack for consumer: %d\n", (int)stack_start);
+        rc = (int)stack_start;
         goto err;
-    stack_info->stack_start = p;
-    stack_info->stack_end = p + CONFIG_MONITOR_STACK_SIZE;
-    p = stack_info->stack_end - sizeof(void *);
+    }
+    p = stack_start + CONFIG_MONITOR_STACK_SIZE - sizeof(void *);
 
     // generate random bytes
     get_random_bytes(k_rand_bytes, sizeof(k_rand_bytes));
     u_rand_bytes = (elf_addr_t __user *)STACK_ALLOC(p, sizeof(k_rand_bytes));
-    if (copy_to_user(u_rand_bytes, k_rand_bytes, sizeof(k_rand_bytes)))
-        goto err;
+    rc = copy_to_user(u_rand_bytes, k_rand_bytes, sizeof(k_rand_bytes));
+    if (rc)
+        goto err_stack;
 
     // put nod_stack_info into Runtime stack
     *stack_info_addr = p = STACK_ALLOC(p, sizeof(*stack_info));
-    if (copy_to_user((char __user *)p, stack_info, sizeof(*stack_info)))
-        goto err;
+    rc = copy_to_user((char __user *)p, stack_info, sizeof(*stack_info));
+    if (rc)
+        goto err_stack;
 
     for(i = argc - 1; i >= 0; --i) {
         int len = strlen(argv[i]) + 1;
         p = STACK_ALLOC(p, len);
-        if (copy_to_user((char __user *)p, argv[i], len))
-            goto err;
+        rc = copy_to_user((char __user *)p, argv[i], len);
+        if (rc)
+            goto err_stack;
     }
     arg_start = p;
 
@@ -168,14 +174,18 @@ create_elf_tbls(struct elfhdr *exec,
     */
     elf_info_idx = 0;
     elf_info = vmalloc(sizeof(elf_addr_t) * 12 * 2);
-    if (!elf_info) goto err;
+    if (!elf_info) {
+        rc = -ENOMEM;
+        goto err_stack;
+    }
     INSERT_AUX_ENT(AT_HWCAP, ELF_HWCAP);
     INSERT_AUX_ENT(AT_PAGESZ, ELF_EXEC_PAGESIZE);
     INSERT_AUX_ENT(AT_CLKTCK, CLOCKS_PER_SEC);
     INSERT_AUX_ENT(AT_PHDR, load_addr + exec->e_phoff);
     INSERT_AUX_ENT(AT_PHENT, sizeof(struct elf_phdr));
     INSERT_AUX_ENT(AT_PHNUM, exec->e_phnum);
-    INSERT_AUX_ENT(AT_BASE, interp_load_addr);
+    // INSERT_AUX_ENT(AT_BASE, interp_load_addr);
+    INSERT_AUX_ENT(AT_BASE, load_addr);
     INSERT_AUX_ENT(AT_FLAGS, 0);
     INSERT_AUX_ENT(AT_ENTRY, load_addr + exec->e_entry);
     // INSERT_AUX_ENT(AT_EXECFN, original_rsp);
@@ -185,11 +195,10 @@ create_elf_tbls(struct elfhdr *exec,
     #define INSERT_ENV_ENT(start, sp) \
     ({\
         size_t len; \
-        if (put_user((elf_addr_t)start, (elf_addr_t *)sp++)) \
-            goto err; \
+        rc = put_user((elf_addr_t)start, (elf_addr_t *)sp++); \
+        if (rc) goto err_elf; \
         len = strnlen_user((void __user *)(start), MAX_ARG_STRLEN); \
-        if (!len || len > MAX_ARG_STRLEN) \
-            goto err; \
+        if (!len || len > MAX_ARG_STRLEN) { rc = -EFAULT; goto err_elf; } \
         len; \
     })
 
@@ -197,8 +206,7 @@ create_elf_tbls(struct elfhdr *exec,
     ({\
         size_t len; \
         len = strnlen_user((void __user *)start, MAX_ARG_STRLEN); \
-        if (!len || len > MAX_ARG_STRLEN) \
-            goto err; \
+        if (!len || len > MAX_ARG_STRLEN) { rc = -EFAULT; goto err_elf; } \
         len; \
     })
 
@@ -237,23 +245,27 @@ create_elf_tbls(struct elfhdr *exec,
 
     // put argc
     // We put argc + 1 here because the additional value of address of nod_stack_info
-    if (__put_user(argc + 1, sp++))
-        goto err;
+    rc = __put_user(argc + 1, sp++);
+    if (rc)
+        goto err_elf;
 
     // put argv
     for (i = 0; i < argc; ++i) {
-        if(put_user((elf_addr_t)arg_start, sp++))
-            goto err;
+        rc = put_user((elf_addr_t)arg_start, sp++); 
+        if(rc)
+            goto err_elf;
         arg_start += strlen(argv[i]) + 1;
     }
 
     // put address of nod_stack_info
-    if(put_user((elf_addr_t)*stack_info_addr, sp++))
-        goto err;
+    rc = put_user((elf_addr_t)*stack_info_addr, sp++); 
+    if(rc)
+        goto err_elf;
 
     // put NULL to mark the end of argv
-    if (put_user(0, sp++))
-        goto err;
+    rc = put_user(0, sp++);
+    if (rc)
+        goto err_elf;
 
     // put env
     env_start = current->mm->env_start;
@@ -262,20 +274,27 @@ create_elf_tbls(struct elfhdr *exec,
     }
 
     // put NULL to mark the end of env
-    if (__put_user(0, sp++))
-        goto err;
+    rc = __put_user(0, sp++);
+    if (rc)
+        goto err_elf;
 
     // put AUXV
-    if (copy_to_user(sp, elf_info, elf_info_idx * sizeof(elf_addr_t))) {
-        goto err;
-    }
+    rc = copy_to_user(sp, elf_info, elf_info_idx * sizeof(elf_addr_t));
+    if (rc)
+        goto err_elf;
 
     vfree(elf_info);
+
+    stack_info->stack_start = stack_start;
+    stack_info->stack_end = stack_start + CONFIG_MONITOR_STACK_SIZE;
     return NOD_SUCCESS;
 
-err:
+err_elf:
     vfree(elf_info);
-    return -EFAULT;
+err_stack:
+    vm_munmap(stack_start - PAGE_SIZE, CONFIG_MONITOR_STACK_SIZE + PAGE_SIZE + PAGE_SIZE);
+err:
+    return rc;
 }
 
 static int
@@ -294,12 +313,15 @@ do_load_monitor(struct nod_proc_info *p, int argc, const char *argv[])
     uint64_t load_entry;
     uint64_t monitor_map_addr;
 
+    // FIXME: there are some unknown concurrent issues here, TLS related
+    mutex_lock(&loader_lock);
     if (filp_interpreter) {
         interp_load_addr = elf_load_binary(&interp_elf_ex, filp_interpreter, &interp_map_addr,
                         ELF_ET_DYN_BASE, interp_elf_phdata);
         if (BAD_ADDR(interp_load_addr)) {
             retval = IS_ERR((void *)interp_load_addr) ?	
                      (int)interp_load_addr : -EINVAL;
+            vpr_err("cannot load interpreter: %d\n", retval);
             goto out;
         }
     }
@@ -310,6 +332,7 @@ do_load_monitor(struct nod_proc_info *p, int argc, const char *argv[])
     if (BAD_ADDR(load_addr)) {
         retval = IS_ERR((void *)load_addr) ?
                 (int)load_addr : -EINVAL;
+        vpr_err("cannot load monitor: %d\n", retval);
         goto out;
     }
 
@@ -317,6 +340,7 @@ do_load_monitor(struct nod_proc_info *p, int argc, const char *argv[])
     retval = create_elf_tbls(&monitor_elf_ex, load_addr, interp_load_addr, 
                              &p->stack_info, &p->stack_info_addr, &p->stack_addr, argc, argv);
     if (retval) {
+        vpr_err("cannot create elf tables: %d\n", retval);
         goto out;
     }
 
@@ -332,6 +356,7 @@ do_load_monitor(struct nod_proc_info *p, int argc, const char *argv[])
     retval = NOD_SUCCESS;
 
 out:
+    mutex_unlock(&loader_lock);
     return retval;
 }
 

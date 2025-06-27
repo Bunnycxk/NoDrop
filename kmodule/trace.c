@@ -272,12 +272,14 @@ mm_range_filter(struct nod_proc_info *p, struct pt_regs *regs)
         return 0;
 
     default:
+#if 0
         syscall_get_arguments_deprecated(current, regs, 0, 1, &addr);
         syscall_get_arguments_deprecated(current, regs, 1, 1, &length);
         if (nod_mmap_check(addr, length)) {
             vpr_warn("is trying to manipulate monitor memory %lx len %ld\n", addr, length);
             return -EINVAL;
         }
+#endif
 
         return 0;
     }

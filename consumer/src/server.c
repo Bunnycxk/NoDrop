@@ -7,26 +7,27 @@
 
 static int run_server(int sockfd) {
   int rc;
+  int server_pid, tid;
   uint64_t curr_psn, remote_psn;
   uint64_t buffer_size;
   volatile nod_buffer_info_t *buffer_info;
   nod_rdma_config_t rdma_config;
   nod_rdma_ctrl_block_t cb;
 
-  printf("Server (%d) started, waiting for RDMA config...\n", getpid());
-
+  server_pid = getpid();
   rc = nod_read_from_socket(sockfd, &rdma_config, sizeof(nod_rdma_config_t));
   if (rc != sizeof(nod_rdma_config_t)) {
-    fprintf(stderr, "Failed to read RDMA config from socket: %d\n", rc);
+    fprintf(stderr, "Server %d Failed to read RDMA config from socket: %d\n", server_pid, rc);
     goto out;
   }
 
-  printf("RDMA config received:\n");
+  printf("Server(%d) RDMA config received:\n", server_pid);
   printf("  Device Name: %s\n", rdma_config.device_name);
   printf("  IB Port: %d\n", rdma_config.ib_port);
   printf("  IB GID Index: %d\n", rdma_config.ib_gid_index);
   printf("  Initial PSN: %d\n", rdma_config.init_psn);
   printf("  Buffer Size: %lu\n", rdma_config.buffer_size);
+  printf("  PID: %d\n", rdma_config.pid);
 
   buffer_size = rdma_config.buffer_size;
   buffer_info =
@@ -53,12 +54,12 @@ static int run_server(int sockfd) {
     goto out_cb;
   }
 
-  printf("RDMA control block initialized and QP connected\n");
+  printf("Server %d <== OK ==> Consumer %d\n", server_pid, rdma_config.pid);
 
   curr_psn = rdma_config.init_psn;
   while (true) {
     if (buffer_info->rdma_protocal.exited) {
-      fprintf(stderr, "Server exiting...\n");
+      printf("Server %d exiting...\n", server_pid);
       rc = 0;
       break;
     }
@@ -67,14 +68,14 @@ static int run_server(int sockfd) {
     if (remote_psn > curr_psn) {
       if (remote_psn - curr_psn > 1) {
         fprintf(stderr,
-                "Remote PSN jumped from %lu to %lu, possible data loss\n",
+                "%d: Remote PSN jumped from %lu to %lu, possible data loss\n", rdma_config.pid,
                 curr_psn, remote_psn);
       }
       curr_psn = remote_psn;
     }
   }
 
-  printf("Server stopped, PSN: %lu\n", curr_psn);
+  printf("Server %d stopped, PSN: %lu\n", server_pid, curr_psn);
 
 out_cb:
   nod_rdma_ctrl_block_fini(&cb);
@@ -115,8 +116,8 @@ int main() {
     goto out_close_bind;
   }
 
+  printf("Waiting for connection on port %d...\n", sock_port);
   while (true) {
-    printf("Waiting for connection on port %d...\n", sock_port);
     rc = accept(listenfd, NULL, 0);
     if (rc < 0) {
       perror("accept");
