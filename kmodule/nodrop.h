@@ -16,10 +16,6 @@
 #define vpr_dbg(fmt, ...)
 // #define vpr_dbg(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
 
-// #define NOD_TEST(task) if (!(task->cred->uid.val == 1000))
-// #define NOD_TEST(task) if (!(STR_EQU(current->comm, "redis-server")))
-#define NOD_TEST(task) if (!(STR_EQU(current->comm, "getpid")))
-#define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
 
 #define NOD_SUCCESS 0
@@ -67,6 +63,8 @@ int trace_syscall(void);
 void untrace_syscall(void);
 int  tracepoint_init(void);
 void tracepoint_destory(void);
+void nod_set_target_comm(const char *comm);
+void nod_get_target_comm(char *comm);
 
 // procinfo.c
 int procinfo_init(void);

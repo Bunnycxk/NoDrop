@@ -7,8 +7,10 @@
 
 #ifdef __KERNEL__
 #include <linux/ioctl.h>
+#include <linux/types.h>
 #else
 #include <sys/ioctl.h>
+#include <stdint.h>
 #endif //__KERNEL__
 
 #define NOD_IOCTL_MAGIC 'n'
@@ -23,6 +25,10 @@
 #define NOD_IOCTL_RESTORE_CONTEXT               _IO(NOD_IOCTL_MAGIC, 8)
 #define NOD_IOCTL_GET_BUFFER_SIZE               _IO(NOD_IOCTL_MAGIC, 9)
 #define NOD_IOCTL_SET_BUFFER_SIZE               _IO(NOD_IOCTL_MAGIC, 10)
+#define NOD_IOCTL_GET_TARGET_COMM               _IO(NOD_IOCTL_MAGIC, 11)
+#define NOD_IOCTL_SET_TARGET_COMM               _IO(NOD_IOCTL_MAGIC, 12)
+
+#define NOD_TARGET_COMM_MAX_LEN 64
 
 struct buffer_count_info {
 	uint64_t event_count;
@@ -40,5 +46,17 @@ struct nod_event_statistic {
   uint64_t n_drop_evts;
   uint64_t n_drop_evts_unsolved;
 };
+
+typedef union nod_ioctl_data_u {
+  struct buffer_count_info buffer_count;
+  struct fetch_buffer_struct fetch_buffer;
+  struct nod_event_statistic event_stat;
+  struct {
+    unsigned long bufsize;
+  } buffer_size;
+  struct {
+    char comm[NOD_TARGET_COMM_MAX_LEN];
+  } target_comm;
+} nod_ioctl_data_t;
 
 #endif //NOD_IOCTL_H_

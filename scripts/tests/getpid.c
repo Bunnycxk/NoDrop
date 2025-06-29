@@ -6,9 +6,11 @@
 #include <stdlib.h>
 
 #include "tsc.h"
+#define USE_PTHREAD
+#undef USE_PTHREAD
 
 #define NR_THREAD_PARAMS 64
-#if 0
+#ifdef USE_PTHREAD
 typedef struct thread_param_s {
   unsigned int threadid;
   int loop;
@@ -93,7 +95,7 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-#if 0
+#ifdef USE_PTHREAD
   pthread_barrier_init(&barrier, NULL, nthreads);
   pthread_mutex_init(&print_lock, NULL);
 

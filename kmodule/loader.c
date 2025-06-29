@@ -38,7 +38,7 @@ get_monitor_addr(struct vm_area_struct const * const vma, void *arg)
     unsigned long addr = ((unsigned long *)arg)[0];
     unsigned long end = addr + ((unsigned long *)arg)[1];
 
-    if (end < vma->vm_start)
+    if (end <= vma->vm_start)
         return MAPPING_FINISH;
     else if (MAX(vma->vm_start, addr) < MIN(vma->vm_end, end))
         return MAPPING_OK;

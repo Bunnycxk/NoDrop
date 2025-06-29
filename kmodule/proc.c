@@ -20,7 +20,7 @@ static struct proc_dir_entry *ent;
 static int nod_dev_open(struct inode *inode, struct file *filp)
 {
     struct nod_proc_info *p;
-    
+
     nod_event_from(&p);
     filp->private_data = (void *)p;
     return 0;
@@ -68,16 +68,16 @@ static int
 __proc_buf_copy(struct nod_proc_info *this, unsigned long *ret, va_list args)
 {
     nod_buffer_info_t *info = this->buffer.info;
-    char **ptr = va_arg(args, char **);
+    char *ptr = va_arg(args, char *);
     uint64_t *count = va_arg(args, uint64_t *);
     uint64_t len = va_arg(args, uint64_t);
 
     if (*count + info->tail <= len) {
-        if (copy_to_user((void *)*ptr, (void *)info->buffer, info->tail)) {
+        if (copy_to_user((void *)ptr, (void *)info->buffer, info->tail)) {
             *ret = -EFAULT;
             return NOD_PROC_TRAVERSE_BREAK;
         }
-        *ptr += info->tail;
+        ptr += info->tail;
         *count += info->tail;
         *ret = 0;
         return NOD_PROC_TRAVERSE_CONTINUE;
@@ -92,63 +92,58 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
     int ret, cpu;
     uint64_t count;
-    unsigned long bufsize;
-    char *ptr;
-    struct buffer_count_info cinfo;
-    struct fetch_buffer_struct fetch;
+    nod_ioctl_data_t data;
     struct nod_stack_info stack;
-    struct nod_event_statistic tot_stat, *stat;
+    struct nod_event_statistic *stat;
     struct nod_proc_info *p = filp->private_data;
 
+    memset(&data, 0, sizeof(data));
     switch(cmd) {
     case NOD_IOCTL_CLEAR_BUFFER:
         nod_proc_traverse(__proc_buf_reset);
 
         pr_info("proc: clean buffer");
         break;
-        
+
     case NOD_IOCTL_FETCH_BUFFER:
-        if (nod_copy_from_user((void *)&fetch, (void *)arg, sizeof(fetch))) {
+        if (nod_copy_from_user((void *)&data, (void *)arg, sizeof(data))) {
             ret = -EFAULT;
             goto out;
         }
 
         count = 0;
-        ptr = fetch.buf;
-        ret = nod_proc_traverse(__proc_buf_copy, &ptr, &count, fetch.len);
+        ret = nod_proc_traverse(__proc_buf_copy, data.fetch_buffer.buf, &count, data.fetch_buffer.len);
         if (ret) {
             goto out;
         }
 
-        fetch.len = count;
-        if (copy_to_user((void *)ptr, (void *)&fetch, sizeof(fetch))) {
+        data.fetch_buffer.len = count;
+        if (copy_to_user((void *)arg, (void *)&data, sizeof(data))) {
             ret = -EFAULT;
             goto out;
         }
 
         ret = 0;
         break;
-    
-    case NOD_IOCTL_READ_BUFFER_COUNT_INFO:
-        memset(&cinfo, 0, sizeof(cinfo));
-        nod_proc_traverse(__proc_bufcount_read, &cinfo);
 
-        if (copy_to_user((void *)arg, (void *)&cinfo, sizeof(cinfo))) {
+    case NOD_IOCTL_READ_BUFFER_COUNT_INFO:
+        nod_proc_traverse(__proc_bufcount_read, &data.buffer_count);
+
+        if (copy_to_user((void *)arg, (void *)&data, sizeof(data))) {
             ret = -EFAULT;
             goto out;
         }
         break;
 
     case NOD_IOCTL_READ_STATISTICS:
-        memset(&tot_stat, 0, sizeof(tot_stat));
         for_each_possible_cpu(cpu) {
           stat = &per_cpu(g_stat, cpu);
-          tot_stat.n_evts += stat->n_evts;
-          tot_stat.n_drop_evts += stat->n_drop_evts;
-          tot_stat.n_drop_evts_unsolved += stat->n_drop_evts_unsolved;
+          data.event_stat.n_evts += stat->n_evts;
+          data.event_stat.n_drop_evts += stat->n_drop_evts;
+          data.event_stat.n_drop_evts_unsolved += stat->n_drop_evts_unsolved;
         }
 
-        if (copy_to_user((void *)arg, (void *)&tot_stat, sizeof(tot_stat))) {
+        if (copy_to_user((void *)arg, (void *)&data, sizeof(data))) {
           ret = -EFAULT;
           goto out;
         }
@@ -201,18 +196,43 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         break;
 
     case NOD_IOCTL_SET_BUFFER_SIZE:
-        if (nod_event_set_buffer_size(arg)) {
+        if (nod_copy_from_user(&data, (void __user *)arg, sizeof(data))) {
+            ret = -EFAULT;
+            goto out;
+        }
+        if (nod_event_set_buffer_size(data.buffer_size.bufsize)) {
             ret = -EINVAL;
             goto out;
         }
         break;
 
     case NOD_IOCTL_GET_BUFFER_SIZE:
-        if (nod_event_get_buffer_size(&bufsize)) {
+        if (nod_copy_from_user(&data, (void __user *)arg, sizeof(data))) {
+            ret = -EFAULT;
+            goto out;
+        }
+        if (nod_event_get_buffer_size(&data.buffer_size.bufsize)) {
             ret = -EINVAL;
             goto out;
         }
-        if (copy_to_user((void *)arg, (void *)&bufsize, sizeof(bufsize))) {
+        if (copy_to_user((void *)arg, (void *)&data, sizeof(data))) {
+            ret = -EFAULT;
+            goto out;
+        }
+        break;
+    
+    case NOD_IOCTL_SET_TARGET_COMM:
+        if (nod_copy_from_user(&data, (void __user *)arg, sizeof(data))) {
+            ret = -EFAULT;
+            goto out;
+        }
+
+        nod_set_target_comm(data.target_comm.comm);
+        break;
+
+    case NOD_IOCTL_GET_TARGET_COMM:
+        nod_get_target_comm(data.target_comm.comm);
+        if (copy_to_user((void *)arg, (void *)&data, sizeof(data))) {
             ret = -EFAULT;
             goto out;
         }

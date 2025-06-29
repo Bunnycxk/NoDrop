@@ -8,7 +8,7 @@
 static int run_server(int sockfd) {
   int rc;
   int server_pid, tid;
-  uint64_t curr_psn, remote_psn;
+  uint64_t curr_psn, remote_psn, nr_events;
   uint64_t buffer_size;
   volatile nod_buffer_info_t *buffer_info;
   nod_rdma_config_t rdma_config;
@@ -56,6 +56,7 @@ static int run_server(int sockfd) {
 
   printf("Server %d <== OK ==> Consumer %d\n", server_pid, rdma_config.pid);
 
+  nr_events = 0;
   curr_psn = rdma_config.init_psn;
   while (true) {
     if (buffer_info->rdma_protocal.exited) {
@@ -72,10 +73,11 @@ static int run_server(int sockfd) {
                 curr_psn, remote_psn);
       }
       curr_psn = remote_psn;
+      nr_events += buffer_info->nevents;
     }
   }
 
-  printf("Server %d stopped, PSN: %lu\n", server_pid, curr_psn);
+  printf("Server %d stopped, PSN: %lu, nr_events: %lu\n", server_pid, curr_psn, nr_events);
 
 out_cb:
   nod_rdma_ctrl_block_fini(&cb);

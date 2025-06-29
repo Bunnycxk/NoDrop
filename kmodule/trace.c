@@ -12,6 +12,7 @@
 #include "common.h"
 #include "events.h"
 #include "procinfo.h"
+#include "ioctl.h"
 #include "tsc.h"
 
 #ifndef CONFIG_HAVE_SYSCALL_TRACEPOINTS
@@ -27,6 +28,28 @@
     #define TRACEPOINT_PROBE_UNREGISTER(p1, p2) tracepoint_probe_unregister(p1, p2, NULL)
     #define TRACEPOINT_PROBE(probe, args...) static void probe(void *__data, args)
 #endif
+
+static char nod_target_comm[NOD_TARGET_COMM_MAX_LEN];
+#define NOD_TEST(task)  if(strncmp(task->comm, nod_target_comm, sizeof(nod_target_comm)))
+// #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
+// #define NOD_TEST(task) if (!(task->cred->uid.val == 1000))
+// #define NOD_TEST(task) if (!(STR_EQU(current->comm, "redis-server")))
+// #define NOD_TEST(task) if (!(STR_EQU(current->comm, nod_target_comm)))
+
+void nod_set_target_comm(const char *comm)
+{
+    if (comm && strlen(comm) < NOD_TARGET_COMM_MAX_LEN) {
+        strncpy(nod_target_comm, comm, NOD_TARGET_COMM_MAX_LEN);
+        nod_target_comm[NOD_TARGET_COMM_MAX_LEN - 1] = '\0';
+    } else {
+        vpr_err("Invalid target comm name: %s\n", comm);
+    }
+}
+
+void nod_get_target_comm(char *comm)
+{
+    strncpy(comm, nod_target_comm, NOD_TARGET_COMM_MAX_LEN);
+}
 
 struct nod_syscall_filter {
     int enable;
@@ -272,14 +295,12 @@ mm_range_filter(struct nod_proc_info *p, struct pt_regs *regs)
         return 0;
 
     default:
-#if 0
         syscall_get_arguments_deprecated(current, regs, 0, 1, &addr);
         syscall_get_arguments_deprecated(current, regs, 1, 1, &length);
         if (nod_mmap_check(addr, length)) {
             vpr_warn("is trying to manipulate monitor memory %lx len %ld\n", addr, length);
             return -EINVAL;
         }
-#endif
 
         return 0;
     }
@@ -476,6 +497,7 @@ int tracepoint_init(void) {
     int ret;
 
     tracepoint_registered = 0;
+    memset(nod_target_comm, 0, sizeof(nod_target_comm));
 
     syscall_table = (sys_call_ptr_t *)nod_lookup_name("sys_call_table");
     if (syscall_table == 0) {

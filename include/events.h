@@ -884,6 +884,7 @@ enum nod_event_type {
 typedef struct nod_rdma_protocal_s {
   volatile uint64_t psn;
   volatile int exited;
+  volatile int available;
 } nod_rdma_protocal_t;
 
 typedef struct nod_buffer_info_s {
