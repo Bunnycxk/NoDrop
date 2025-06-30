@@ -350,16 +350,3 @@ elf_load_binary(struct elfhdr *elf_ex,
 out:
     return error;
 }
-
-void elf_reg_init(struct thread_struct *t,
-				   struct pt_regs *regs, const u16 ds)
-{
-	/* ax gets execve's return value. */
-	/*regs->ax = */ regs->bx = regs->cx = regs->dx = 0;
-	regs->si = regs->di = regs->bp = 0;
-	regs->r8 = regs->r9 = regs->r10 = regs->r11 = 0;
-	regs->r12 = regs->r13 = regs->r14 = regs->r15 = 0;
-	t->fsbase = t->gsbase = 0;
-	t->fsindex = t->gsindex = 0;
-	t->ds = t->es = ds;
-}

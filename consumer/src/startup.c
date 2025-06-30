@@ -62,6 +62,7 @@ static int nod_init(int argc, char *argv[], char *env[],
   int rc;
 
   if (likely(__nod_monitor_info.inited)) {
+    syscall(SYS_arch_prctl, ARCH_SET_FS, (unsigned long)p->fsbase);
 #ifdef NOD_PKEY_SUPPORT
     if (p->pkey != -1) {
       pkey_set(p->pkey, PKEY_WR);
@@ -69,6 +70,8 @@ static int nod_init(int argc, char *argv[], char *env[],
 #endif // NOD_PKEY_SUPPORT
     return 0;
   }
+
+  syscall(SYS_arch_prctl, ARCH_GET_FS, (unsigned long)&p->fsbase);
 
   rc = nod_monitor_init(argc, argv, env, p);
   if (rc) {

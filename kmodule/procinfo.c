@@ -251,6 +251,7 @@ void
 procinfo_destroy(void)
 {
     int bkt;
+    struct task_struct *task;
     struct nod_proc_info *this;
     struct hlist_node *tmp;
     if(proc_info_cachep) {
@@ -258,6 +259,11 @@ procinfo_destroy(void)
         hash_for_each_safe(proc_info_hl_head, bkt, tmp, this, rcu) {
             while(this->status == NOD_IN) {
                 pr_info("wait for exiting monitor (pid %d status %d)\n", this->pid, this->status);
+                task = pid_task(find_vpid(this->pid), PIDTYPE_PID);
+                if (task == NULL) {
+                    pr_err("task %d not found, remove proc info\n", this->pid);
+                    break;
+                }
                 msleep(5);
             }
             nod_free_procinfo(this);

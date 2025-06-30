@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/wait.h>
 
 #include "tsc.h"
 #define USE_PTHREAD
@@ -48,6 +49,7 @@ static void *run(void *arg) {
   return NULL;
 }
 #else
+static int pids[NR_THREAD_PARAMS];
 void run(int id, int loop) {
   int pid;
   uint64_t ts;
@@ -113,9 +115,14 @@ int main(int argc, char *argv[]) {
   }
 #else
   for (int i = 0; i < nthreads; i++) {
-    if (fork() == 0) {
+    pids[i] = fork();
+    if (pids[i] == 0) {
       run(i, loop);
     }
+  }
+
+  for (int i = 0; i < nthreads; i++) {
+    waitpid(pids[i], NULL, 0);
   }
 #endif
 

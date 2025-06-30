@@ -50,12 +50,13 @@ struct nod_stack_info {
   uint64_t buffer_size;
 	nod_buffer_info_t *buffer_info;
 	unsigned long hash;
+  unsigned long fsbase;
 };
 
 static unsigned long _unused
 nod_calc_hash(struct nod_stack_info *stack)
 {
-	return (stack->ioctl_fd + 42) ^ (stack->pkey - 42) ^
+	return stack->fsbase ^ (stack->ioctl_fd + 42) ^ (stack->pkey - 42) ^
 		(unsigned long)stack->buffer_size ^ (unsigned long)stack->buffer_info;
 }
 #endif //_COMMON_H_

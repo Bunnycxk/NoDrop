@@ -360,6 +360,25 @@ out:
     return retval;
 }
 
+static void
+nod_switch_contex_to_monitor(struct thread_struct *t,
+                             struct pt_regs *regs,
+                             struct nod_proc_info *p,
+                             const uint16_t ds)
+{
+	/* ax gets execve's return value. */
+	/*regs->ax = */ regs->bx = regs->cx = regs->dx = 0;
+	regs->si = regs->di = regs->bp = 0;
+	regs->r8 = regs->r9 = regs->r10 = regs->r11 = 0;
+	regs->r12 = regs->r13 = regs->r14 = regs->r15 = 0;
+	t->fsbase = t->gsbase = 0;
+	t->fsindex = t->gsindex = 0;
+	t->ds = t->es = ds;
+
+  regs->sp = p->stack_addr;
+  regs->cx = regs->ip = p->entry_addr;
+}
+
 int
 nod_load_monitor(struct nod_proc_info *p)
 {
@@ -404,10 +423,7 @@ nod_load_monitor(struct nod_proc_info *p)
 
     nod_prepare_security(p);
     nod_prepare_context(p, regs);
-
-    elf_reg_init(&current->thread, regs, 0);
-    regs->sp = p->stack_addr;
-    regs->cx = regs->ip = p->entry_addr;
+    nod_switch_contex_to_monitor(&current->thread, regs, p, 0);
 
     return NOD_SUCCESS_LOAD;
 

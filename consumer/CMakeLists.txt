@@ -74,21 +74,21 @@ link_directories(
   ${IBVERBS_LIBRARY_DIRS}
 )
 
-set(CONSUMER_LINKER_SCRIPT "script_x86-64.ld")
-# set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -T ${LINKER_SCRIPT}")
-
 add_executable(${CONSUMER}    ${CONSUMER_SOURCES})
 add_executable(${RDMASERVER}  ${RDMASERVER_SOURCES})
-add_custom_command(TARGET ${CONSUMER} POST_BUILD
-  COMMAND strip -R .symtab ${CONSUMER} -o ${CONSUMER}
-  COMMAND "${CMAKE_COMMAND}" -E copy_if_different consumer "${CMAKE_CURRENT_BINARY_DIR}"
-  COMMENT "strip consumer .symtab section"
-  VERBATIM)
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+  add_custom_command(TARGET ${CONSUMER} POST_BUILD
+    COMMAND strip -R .symtab ${CONSUMER} -o ${CONSUMER}
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different consumer "${CMAKE_CURRENT_BINARY_DIR}"
+    COMMENT "strip consumer .symtab section"
+    VERBATIM)
+endif()
 
 target_compile_options(${CONSUMER} PRIVATE -mno-sse -Wall -fno-stack-protector -fPIE -specs=musl.specs)
 target_link_options(${CONSUMER} PRIVATE --static-pie -nostartfiles -specs=musl.specs)
 # force linking with mlx5 to load the constructor
 target_link_libraries(${CONSUMER} PRIVATE -Wl,--whole-archive;-lmlx5;-Wl,--no-whole-archive ibverbs)
+set(CONSUMER_LINKER_SCRIPT "script_x86-64.ld")
 set_target_properties(${CONSUMER} PROPERTIES LINK_FLAGS "-T${CONSUMER_LINKER_SCRIPT}")
 
 target_link_options(${RDMASERVER} PRIVATE --static)

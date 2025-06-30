@@ -102,7 +102,6 @@ int elf_load_phdrs(struct elfhdr *elf_ex, struct file *elf_file, struct elf_phdr
 int elf_load_shdrs(struct elfhdr *elf_ex, struct file *elf_file, struct elf_shdr **elf_shdrs);
 int elf_load_shstrtab(struct elfhdr *elf_ex, struct elf_shdr *elf_shdrs, struct file *elf_file, char **elf_shstrtab);
 unsigned long elf_load_binary(struct elfhdr *elf_ex, struct file *binary, uint64_t *map_addr, unsigned long no_base, struct elf_phdr *elf_phdrs);
-void elf_reg_init(struct thread_struct *t, struct pt_regs *regs, const u16 ds);
 
 /*
  * fillers.c
