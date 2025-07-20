@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <fcntl.h>
 #include <pthread.h>
 #include <sched.h>
 #include <stdint.h>
@@ -10,6 +11,10 @@
 #define USE_PTHREAD
 #undef USE_PTHREAD
 
+// #define FLOOD_BY_GETPID
+#define FLOOD_BY_WRITE
+
+#define CPUBIND_OFFSET 0
 #define NR_THREAD_PARAMS 64
 #ifdef USE_PTHREAD
 typedef struct thread_param_s {
@@ -56,7 +61,7 @@ void run(int id, int loop) {
   cpu_set_t cpuset;
 
   CPU_ZERO(&cpuset);
-  CPU_SET(id, &cpuset);
+  CPU_SET(CPUBIND_OFFSET + id, &cpuset);
   if (sched_setaffinity(0, sizeof(cpu_set_t), &cpuset) < 0) {
     perror("cpu_setaffinity");
     goto out;
@@ -64,13 +69,30 @@ void run(int id, int loop) {
 
   pid = getpid();
 
+#if defined(FLOOD_BY_WRITE)
+  char buf[2];
+  int fd = open("/dev/null", O_WRONLY);
+  if (fd < 0) {
+    perror("open /dev/null");
+    goto out;
+  }
+  snprintf(buf, sizeof(buf), "%d", id);
+#endif
+
   ts = -nod_rdtsc();
   for (int i = 0; i < loop; i++) {
+#if defined(FLOOD_BY_GETPID)
     (void volatile) getpid();
+#elif defined(FLOOD_BY_WRITE)
+    (void)!write(fd, buf, sizeof(buf));
+#endif
   }
   ts += nod_rdtsc();
 
-  printf("getpid(pid=%d) called %d times, total ts: %lu\n", pid, loop, ts);
+  printf("getpid(pid=%d) called %d times, total ticks: %lu\n", pid, loop, ts);
+#if defined(FLOOD_BY_WRITE)
+  close(fd);
+#endif
 out:
   exit(0);
 }
@@ -106,8 +128,7 @@ int main(int argc, char *argv[]) {
     thread_params[i].loop = loop;
     thread_params[i].barrier = &barrier;
     thread_params[i].print_lock = &print_lock;
-    pthread_create(&thread_params[i].thread, NULL, run,
-                       &thread_params[i]);
+    pthread_create(&thread_params[i].thread, NULL, run, &thread_params[i]);
   }
 
   for (int i = 0; i < nthreads; i++) {

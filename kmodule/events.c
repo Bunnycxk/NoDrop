@@ -116,7 +116,7 @@ restart:
     args.curarg = 0;
     args.arg_data_size = args.buffer_size - args.arg_data_offset;
 
-    hdr->ts = ts;
+    // hdr->ts = ts;
     hdr->tid = current->pid;
     hdr->type = event_type;
     hdr->cpuid = smp_processor_id();
@@ -135,6 +135,7 @@ restart:
                 info->nevents++;
                 stat->n_evts++;
             }
+            hdr->tsc = nod_rdtsc();
         } else {
             pr_err("corrupted filler for event type %d (added %u args, should have added %u args)\n",
                     event_type,

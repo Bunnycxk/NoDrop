@@ -23,7 +23,9 @@
 
 #define NOD_RDMA_INIT_PSN   0
 static nod_rdma_ctrl_block_t rdma_cb;
+static uint64_t residence_time_sum, residence_time_cnt;
 
+#if 0
 static const char *__print_format[PT_UINT64 + 1][PF_OCT + 1] = {
     [PT_NONE] = {"", "", "", "", ""}, /*empty*/
     [PT_INT8] = {"", "%" PRId8, "0x%" PRIx8, "%010" PRId8,
@@ -59,7 +61,7 @@ static _unused int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer,
   args = (uint16_t *)buffer;
   data = (char *)(args + info->nparams);
 
-  fprintf(out, "%lu %u (%u): %s(", hdr->ts, hdr->tid, hdr->cpuid, info->name);
+  fprintf(out, "%lu %u (%u): %s(", hdr->tsc, hdr->tid, hdr->cpuid, info->name);
 
   for (i = 0; i < info->nparams; ++i) {
     param = &info->params[i];
@@ -131,6 +133,7 @@ static _unused int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer,
   fprintf(out, ")\n");
   return 0;
 }
+#endif
 
 static void nod_rdma_protocal_init(nod_rdma_protocal_t *protocal) {
   protocal->psn = NOD_RDMA_INIT_PSN;
@@ -237,6 +240,7 @@ err_socket:
   close(sockfd);
 err:
   buffer_info->rdma_protocal.available = 0; // not available
+  residence_time_cnt = residence_time_sum = 0;
   return 0;
 
 out_ioctl:
@@ -259,6 +263,10 @@ void nod_monitor_exit(long code, struct nod_stack_info *p) {
 
   munmap(buffer_info, rdma_buffer_size);
   close(p->ioctl_fd);
+
+  printf("NoTamper: avg residence time %lu ticks (%lu)\n",
+         residence_time_cnt ? (residence_time_sum / residence_time_cnt) : 0,
+         residence_time_cnt);
 }
 
 int nod_monitor_main(int argc, char *argv[], char *env[],
@@ -266,8 +274,9 @@ int nod_monitor_main(int argc, char *argv[], char *env[],
   int rc;
   nod_buffer_info_t *buffer_info = p->buffer_info;
   uint64_t rdma_buffer_size = sizeof(nod_buffer_info_t) + buffer_info->tail;
+  struct nod_event_hdr *first_evt;
 
-  if (likely(buffer_info->rdma_protocal.available)) {
+  if (likely(buffer_info->rdma_protocal.available && rdma_buffer_size > sizeof(nod_buffer_info_t))) {
     // uint64_t ts = -nod_rdtsc();
     buffer_info->rdma_protocal.psn++;
     rc = nod_rdma_send((char *)buffer_info, rdma_buffer_size);
@@ -277,6 +286,9 @@ int nod_monitor_main(int argc, char *argv[], char *env[],
     }
     // ts += nod_rdtsc();
     // printf("RDMA write ts:%lu\n", ts);
+    first_evt = (struct nod_event_hdr *)buffer_info->buffer;
+    residence_time_sum += nod_rdtsc() - first_evt->tsc;
+    residence_time_cnt++;
   }
 
   rc = 0;

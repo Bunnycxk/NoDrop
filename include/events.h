@@ -911,7 +911,7 @@ typedef struct nod_buffer_s {
 
 #define NOD_EVENT_HDR_MAGIC 0xCAFEBABE
 struct nod_event_hdr {
-    nanoseconds ts;
+    uint64_t tsc;
     uint32_t tid;
 	  uint16_t cpuid;
     uint16_t type;

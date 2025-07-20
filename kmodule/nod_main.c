@@ -5,7 +5,7 @@
 
 MODULE_LICENSE("GPL");
 
-static int nodrop_init(void)
+static int notamper_init(void)
 {
     int err;
 
@@ -44,14 +44,14 @@ out_loader:
     goto out;
 }
 
-static void nodrop_exit(void)
+static void notamper_exit(void)
 {
     proc_destroy();
     tracepoint_destory();
     procinfo_destroy();
     loader_destory();
-    pr_info("NoDrop: Uninstalled\n");
+    pr_info("NoTamper: Uninstalled\n");
 }
 
-module_init(nodrop_init);
-module_exit(nodrop_exit);
+module_init(notamper_init);
+module_exit(notamper_exit);
