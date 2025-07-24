@@ -567,16 +567,8 @@ nod_mmheap_ctl_init(void)
     }
 }
 
-int 
-nod_mmheap_init(void *pool_start, size_t pool_size)
-{
-    nod_mmheap_ctl_init();
-
-    return nod_mmheap_pool_add(pool_start, pool_size);
-}
-
-void *
-nod_mmheap_alloc(size_t size)
+static void*
+__mmheap_alloc(size_t size)
 {
     size_t          adjust_size;
     nod_mmheap_blk_t   *blk;
@@ -594,12 +586,26 @@ nod_mmheap_alloc(size_t size)
     return blk_prepare_used(blk, adjust_size);
 }
 
+int 
+nod_mmheap_init(void *pool_start, size_t pool_size)
+{
+    nod_mmheap_ctl_init();
+
+    return nod_mmheap_pool_add(pool_start, pool_size);
+}
+
+void *
+nod_mmheap_malloc(size_t size)
+{
+    return __mmheap_alloc(size);
+}
+
 void *
 nod_mmheap_calloc(size_t num, size_t size)
 {
     void *ptr;
 
-    ptr = nod_mmheap_alloc(num * size);
+    ptr = __mmheap_alloc(num * size);
     if (ptr) {
         memset(ptr, 0, num * size);
     }
@@ -689,7 +695,7 @@ nod_mmheap_realloc(void *ptr, size_t size)
     }
 
     if (!ptr) {
-        return nod_mmheap_alloc(size);
+        return __mmheap_alloc(size);
     }
 
     curr_blk = blk_from_ptr(ptr);
@@ -700,7 +706,7 @@ nod_mmheap_realloc(void *ptr, size_t size)
     adjust_size = adjust_request_size(size, NOD_MMHEAP_ALIGN_SIZE);
 
     if (adjust_size > curr_size && (!blk_is_free(next_blk) || adjust_size > combined_size)) {
-        p = nod_mmheap_alloc(size);
+        p = __mmheap_alloc(size);
         if (p) {
             min_size = curr_size < size ? curr_size : size;
             memcpy(p, ptr, min_size);

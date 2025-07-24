@@ -28,6 +28,7 @@ static int run_server(int sockfd) {
   printf("  Initial PSN: %d\n", rdma_config.init_psn);
   printf("  Buffer Size: %lu\n", rdma_config.buffer_size);
   printf("  PID: %d\n", rdma_config.pid);
+  printf("  Flags: 0x%lx\n", rdma_config.flags);
 
   buffer_size = rdma_config.buffer_size;
   buffer_info =
@@ -67,13 +68,13 @@ static int run_server(int sockfd) {
 
     remote_psn = buffer_info->rdma_protocal.psn;
     if (remote_psn > curr_psn) {
-      if (remote_psn - curr_psn > 1) {
+      nr_events += buffer_info->nevents;
+      if (NOD_RDMA_TEST_FLAG(rdma_config.flags, NOD_RDMA_FLAG_REPORT_LOST) && remote_psn - curr_psn > 1) {
         fprintf(stderr,
                 "%d: Remote PSN jumped from %lu to %lu, possible data loss\n", rdma_config.pid,
                 curr_psn, remote_psn);
       }
       curr_psn = remote_psn;
-      nr_events += buffer_info->nevents;
     }
   }
 

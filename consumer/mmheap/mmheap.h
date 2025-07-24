@@ -1,7 +1,8 @@
 #ifndef NOD_MMHEAP_H_
 #define NOD_MMHEAP_H_
 
-#define nod_mmheap_alloc            malloc
+#include <stddef.h>
+#define nod_mmheap_malloc           malloc
 #define nod_mmheap_calloc           calloc
 #define nod_mmheap_realloc          realloc
 #define nod_mmheap_aligned_alloc    aligned_alloc
@@ -147,7 +148,7 @@ int nod_mmheap_pool_rmv(void *pool_start);
  *
  * @return  the pointer to the allocated memory.
  */
-void   *nod_mmheap_alloc(size_t size);
+void   *nod_mmheap_malloc(size_t size);
 
 void   *nod_mmheap_calloc(size_t num, size_t size);
 

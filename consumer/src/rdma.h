@@ -15,6 +15,9 @@
 #define NOD_RDMA_IB_GID_INDEX 0
 #define NOD_RDMA_TO_ADDRESS(hi, lo) (((uint64_t)hi << 32) | ((uint64_t)lo))
 
+#define NOD_RDMA_TEST_FLAG(p, flag) ((p) & (flag))
+#define NOD_RDMA_FLAG_REPORT_LOST  (0x1lu)
+
 typedef struct nod_rdma_config_s {
   char device_name[16]; /* RDMA device name */
   int ib_port;
@@ -22,6 +25,7 @@ typedef struct nod_rdma_config_s {
   int init_psn;
   int pid;
   uint64_t buffer_size;
+  uint64_t flags;
 } nod_rdma_config_t;
 
 typedef struct nod_rdma_prop_s {

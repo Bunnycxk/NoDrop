@@ -168,6 +168,7 @@ int nod_monitor_init(int argc, char *argv[], char *env[],
     .init_psn = NOD_RDMA_INIT_PSN, // Initial PSN can be set to 0
     .buffer_size = p->buffer_size,
     .pid = (unsigned int)syscall(SYS_gettid),
+    .flags = 0, // NOD_RDMA_FLAG_REPORT_LOST,
   };
   strncpy(rdma_config.device_name, NOD_RDMA_DEVICE_NAME,
           sizeof(rdma_config.device_name) - 1);
