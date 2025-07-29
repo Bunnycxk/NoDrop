@@ -21,9 +21,13 @@
 #define PATH_FMT CONFIG_STORE_PATH "/%u-%ld.buf"
 #endif
 
+#define NOD_RDMA_SUPPORT
+// #undef NOD_RDMA_SUPPORT
+
 #define NOD_RDMA_INIT_PSN   0
 static nod_rdma_ctrl_block_t rdma_cb;
 static uint64_t residence_time_sum, residence_time_cnt;
+static uint64_t total_nevents, total_nevents_cnt;
 
 #if 0
 static const char *__print_format[PT_UINT64 + 1][PF_OCT + 1] = {
@@ -159,20 +163,10 @@ static int nod_rdma_send(char *buffer, int buffer_size) {
 int nod_monitor_init(int argc, char *argv[], char *env[],
                      struct nod_stack_info *p) {
   int rc;
-  int ioctl_fd, sockfd;
+  int ioctl_fd;
   nod_buffer_info_t *buffer_info;
-  uint64_t rdma_buffer_size = sizeof(nod_buffer_info_t) + p->buffer_size;
-  nod_rdma_config_t rdma_config = {
-    .ib_gid_index = NOD_RDMA_IB_GID_INDEX,
-    .ib_port = NOD_RDMA_IB_PORT,
-    .init_psn = NOD_RDMA_INIT_PSN, // Initial PSN can be set to 0
-    .buffer_size = p->buffer_size,
-    .pid = (unsigned int)syscall(SYS_gettid),
-    .flags = 0, // NOD_RDMA_FLAG_REPORT_LOST,
-  };
-  strncpy(rdma_config.device_name, NOD_RDMA_DEVICE_NAME,
-          sizeof(rdma_config.device_name) - 1);
 
+  uint64_t rdma_buffer_size = sizeof(nod_buffer_info_t) + p->buffer_size;
   ioctl_fd = open(NOD_IOCTL_PATH, O_RDWR);
   if (ioctl_fd < 0) {
     perror("Open " NOD_IOCTL_PATH " failed");
@@ -195,16 +189,30 @@ int nod_monitor_init(int argc, char *argv[], char *env[],
                        p->pkey);
     if (rc) {
       perror("pkey_mprotect for buffer info failed");
-      rc = -ENOMEM;
-      goto out_unmap;
+      rc = -EACCESS;
+      goto out_ioctl;
     }
   }
 #endif // NOD_PKEY_SUPPORT
 
   p->ioctl_fd = ioctl_fd;
   p->buffer_info = buffer_info;
+  residence_time_cnt = residence_time_sum = 0;
+  total_nevents = total_nevents_cnt = 0;
 
-  sockfd = nod_rdma_sock_connect(NOD_RDMA_SERVER_NAME, NOD_RDMA_SERVER_PORT);
+#if defined(NOD_RDMA_SUPPORT)
+  nod_rdma_config_t rdma_config = {
+    .ib_gid_index = NOD_RDMA_IB_GID_INDEX,
+    .ib_port = NOD_RDMA_IB_PORT,
+    .init_psn = NOD_RDMA_INIT_PSN, // Initial PSN can be set to 0
+    .buffer_size = p->buffer_size,
+    .pid = (unsigned int)syscall(SYS_gettid),
+    .flags = 0, // NOD_RDMA_FLAG_REPORT_LOST,
+  };
+  strncpy(rdma_config.device_name, NOD_RDMA_DEVICE_NAME,
+          sizeof(rdma_config.device_name) - 1);
+
+  int sockfd = nod_rdma_sock_connect(NOD_RDMA_SERVER_NAME, NOD_RDMA_SERVER_PORT);
   if (sockfd < 0) {
     perror("Failed to connect to RDMA server");
     rc = sockfd;
@@ -233,16 +241,18 @@ int nod_monitor_init(int argc, char *argv[], char *env[],
 
   close(sockfd);
   nod_rdma_protocal_init(&buffer_info->rdma_protocal);
+#endif // NOD_RDMA_SUPPORT
   return 0;
 
+#if defined(NOD_RDMA_SUPPORT)
 err_cb:
   nod_rdma_ctrl_block_fini(&rdma_cb);
 err_socket:
   close(sockfd);
 err:
   buffer_info->rdma_protocal.available = 0; // not available
-  residence_time_cnt = residence_time_sum = 0;
   return 0;
+#endif // NOD_RDMA_SUPPORT
 
 out_ioctl:
   close(ioctl_fd);
@@ -254,6 +264,7 @@ void nod_monitor_exit(long code, struct nod_stack_info *p) {
   uint64_t rdma_buffer_size = sizeof(nod_buffer_info_t) + p->buffer_size;
   nod_buffer_info_t *buffer_info = p->buffer_info;
 
+#ifdef NOD_RDMA_SUPPORT
   if (likely(buffer_info->rdma_protocal.available)) {
     buffer_info->rdma_protocal.exited = 1;
     if (nod_rdma_send((char *)buffer_info, sizeof(nod_buffer_info_t))) {
@@ -261,11 +272,13 @@ void nod_monitor_exit(long code, struct nod_stack_info *p) {
     }
     nod_rdma_ctrl_block_fini(&rdma_cb);
   }
+#endif // NOD_RDMA_SUPPORT
 
   munmap(buffer_info, rdma_buffer_size);
   close(p->ioctl_fd);
 
-  printf("NoTamper: avg residence time %lu ticks (%lu)\n",
+  printf("NoTamper: avg nevents %lu (%lu) avg residence time %lu ticks (%lu)\n",
+         total_nevents / total_nevents_cnt, total_nevents_cnt,
          residence_time_cnt ? (residence_time_sum / residence_time_cnt) : 0,
          residence_time_cnt);
 }
@@ -274,9 +287,10 @@ int nod_monitor_main(int argc, char *argv[], char *env[],
                      struct nod_stack_info *p) {
   int rc;
   nod_buffer_info_t *buffer_info = p->buffer_info;
-  uint64_t rdma_buffer_size = sizeof(nod_buffer_info_t) + buffer_info->tail;
-  struct nod_event_hdr *first_evt;
+  struct nod_event_hdr *first_evt = (struct nod_event_hdr *)buffer_info->buffer;
 
+#ifdef NOD_RDMA_SUPPORT
+  uint64_t rdma_buffer_size = sizeof(nod_buffer_info_t) + buffer_info->tail;
   if (likely(buffer_info->rdma_protocal.available && rdma_buffer_size > sizeof(nod_buffer_info_t))) {
     // uint64_t ts = -nod_rdtsc();
     buffer_info->rdma_protocal.psn++;
@@ -287,13 +301,18 @@ int nod_monitor_main(int argc, char *argv[], char *env[],
     }
     // ts += nod_rdtsc();
     // printf("RDMA write ts:%lu\n", ts);
-    first_evt = (struct nod_event_hdr *)buffer_info->buffer;
-    residence_time_sum += nod_rdtsc() - first_evt->tsc;
-    residence_time_cnt++;
   }
+#endif // NOD_RDMA_SUPPORT
 
+  residence_time_sum += nod_rdtsc() - first_evt->tsc;
+  residence_time_cnt++;
   rc = 0;
+
+#ifdef NOD_RDMA_SUPPORT
 out:
+#endif // NOD_RDMA_SUPPORT
+  total_nevents += buffer_info->nevents;
+  total_nevents_cnt++;
   buffer_info->nevents = buffer_info->tail = 0;
   return rc;
 }

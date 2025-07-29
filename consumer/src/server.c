@@ -1,9 +1,18 @@
 #include "events.h"
 #include "rdma.h"
 #include <netinet/in.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/wait.h>
 #include <unistd.h>
+
+static void sigchld_handler(int sig) {
+  int old_errno = errno;
+  while (waitpid(-1, NULL, WNOHANG) > 0)
+    ;
+  errno = old_errno;
+}
 
 static int run_server(int sockfd) {
   int rc;
@@ -17,7 +26,8 @@ static int run_server(int sockfd) {
   server_pid = getpid();
   rc = nod_read_from_socket(sockfd, &rdma_config, sizeof(nod_rdma_config_t));
   if (rc != sizeof(nod_rdma_config_t)) {
-    fprintf(stderr, "Server %d Failed to read RDMA config from socket: %d\n", server_pid, rc);
+    fprintf(stderr, "Server %d Failed to read RDMA config from socket: %d\n",
+            server_pid, rc);
     goto out;
   }
 
@@ -69,16 +79,18 @@ static int run_server(int sockfd) {
     remote_psn = buffer_info->rdma_protocal.psn;
     if (remote_psn > curr_psn) {
       nr_events += buffer_info->nevents;
-      if (NOD_RDMA_TEST_FLAG(rdma_config.flags, NOD_RDMA_FLAG_REPORT_LOST) && remote_psn - curr_psn > 1) {
+      if (NOD_RDMA_TEST_FLAG(rdma_config.flags, NOD_RDMA_FLAG_REPORT_LOST) &&
+          remote_psn - curr_psn > 1) {
         fprintf(stderr,
-                "%d: Remote PSN jumped from %lu to %lu, possible data loss\n", rdma_config.pid,
-                curr_psn, remote_psn);
+                "%d: Remote PSN jumped from %lu to %lu, possible data loss\n",
+                rdma_config.pid, curr_psn, remote_psn);
       }
       curr_psn = remote_psn;
     }
   }
 
-  printf("Server %d stopped, PSN: %lu, nr_events: %lu\n", server_pid, curr_psn, nr_events);
+  printf("Server %d stopped, PSN: %lu, nr_events: %lu\n", server_pid, curr_psn,
+         nr_events);
 
 out_cb:
   nod_rdma_ctrl_block_fini(&cb);
@@ -92,6 +104,12 @@ out:
 int main() {
   int rc, pid, sock_port = NOD_RDMA_SERVER_PORT, sockfd, listenfd;
   struct sockaddr_in server_addr;
+  struct sigaction sa;
+
+  sa.sa_handler = sigchld_handler;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = SA_RESTART;
+  sigaction(SIGCHLD, &sa, NULL);
 
   memset(&server_addr, 0, sizeof(server_addr));
   server_addr.sin_family = AF_INET;
