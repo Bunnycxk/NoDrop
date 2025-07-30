@@ -9,11 +9,6 @@
 	events.o \
 	privil.o \
 	elf.o \
-	syscall_table.o \
-	fillers_table.o \
-	events_table.o \
-	flags_table.o \
-	dynamic_params_table.o \
 
 obj-m += @PROBE_NAME@.o
 ccflags-y += @KBUID_FLAGS@

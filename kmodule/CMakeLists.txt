@@ -38,16 +38,8 @@ set(KMODULE_SOURCES
         events.c
         privil.c
         elf.c
-        syscall_table.c
-        fillers_table.c
-        tables/events_table.c
-        tables/flags_table.c
-        tables/dynamic_params_table.c
-        flags.h
-        syscall.h
         config.h
         ../include/common.h
-        ../include/events.h
         ../include/ioctl.h
         ../include/tsc.h
 )

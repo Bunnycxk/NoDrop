@@ -1,89 +1,101 @@
 #ifndef NOD_FILLER_H_
 #define NOD_FILLER_H_
 
-struct event_filler_arguments;
+#include <linux/ptrace.h>
+#include "common.h"
 
-#define FILLER_LIST_MAPPER(FN)			\
-        FN(sys_generic)			\
-    FN(sys_open)			\
-    FN(sys_empty)			\
-    FN(sys_read)			\
-    FN(sys_write)			\
-    FN(sys_execve)			\
-    FN(sys_procstart)			\
-    FN(sys_socket_bind)			\
-    FN(sys_connect)			\
-    FN(sys_send)			\
-    FN(sys_sendto)          \
-    FN(sys_recv)			\
-    FN(sys_recvfrom)			\
-    FN(sys_shutdown)			\
-    FN(sys_socketpair)			\
-    FN(sys_setsockopt)			\
-    FN(sys_getsockopt)			\
-    FN(sys_sendmsg)			\
-    FN(sys_recvmsg)			\
-    FN(sys_creat)			\
-    FN(sys_pipe)			\
-    FN(sys_eventfd)			\
-    FN(sys_futex)			\
-    FN(sys_poll)			\
-    FN(sys_lseek)           \
-    FN(sys_llseek)          \
-    FN(sys_pread)			\
-    FN(sys_pwrite)			\
-    FN(sys_readv_preadv)			\
-    FN(sys_writev)			\
-    FN(sys_preadv)			\
-    FN(sys_pwritev)			\
-    FN(sys_nanosleep)			\
-    FN(sys_getrlimit_setrlrimit)			\
-    FN(sys_prlimit)			\
-    FN(sys_fcntl)			\
-    FN(sys_brk_munmap_mmap)			\
-    FN(sys_ptrace)			\
-    FN(sys_renameat)			\
-    FN(sys_symlinkat)			\
-    FN(sys_sendfile)			\
-    FN(sys_quotactl)			\
-    FN(sys_getresuid_and_gid)			\
-    FN(proc_startupdate)			\
-    FN(sys_setns)			\
-    FN(sys_flock)			\
-    FN(sys_accept)			\
-    FN(sys_accept4)			\
-    FN(sys_semop)			\
-    FN(sys_semctl)			\
-    FN(sys_ppoll)			\
-    FN(sys_mount)			\
-    FN(sys_semget)			\
-    FN(sys_access)			\
-    FN(sys_unshare)			\
-    FN(sys_bpf)			\
-    FN(sys_unlinkat)			\
-    FN(sys_mkdirat)			\
-    FN(sys_openat)			\
-    FN(sys_linkat)			\
-    FN(sys_fchmodat)			\
-    FN(sys_chmod)			\
-    FN(sys_fchmod)			\
-    FN(sys_renameat2)			\
-    FN(sys_openat2)			\
-    FN(sys_mprotect)			\
-    FN(sys_execveat)			\
-    FN(sys_copy_file_range)			\
-	FN(terminate_filler)
- 
-#define FILLER_ENUM_FN(x) NOD_FILLER_##x,
-enum nod_filler_id {
-    FILLER_LIST_MAPPER(FILLER_ENUM_FN)
-    NOD_FILLER_MAX
-};
-#undef FILLER_ENUM_FN
+#define SYSCALL_TABLE_SIZE 512
+#define NOD_SYSCALL_FILLER_MAX_SNAPS 128
 
-#define FILLER_PROTOTYPE_FN(x) \
-    int f_##x(struct event_filler_arguments *args) __attribute__((weak));
+#define FILLER_LIST_MAPPER(FN) \
+  FN(accept) \
+  FN(accept4) \
+  FN(bind) \
+  FN(chdir) \
+  FN(chmod) \
+  FN(clone) \
+  FN(clone3) \
+  FN(close) \
+  FN(connect) \
+  FN(creat) \
+  FN(dup) \
+  FN(dup2) \
+  FN(dup3) \
+  FN(execve) \
+  FN(execveat) \
+  FN(exit) \
+  FN(exit_group) \
+  FN(fchdir) \
+  FN(fchmod) \
+  FN(fchmodat) \
+  FN(fcntl) \
+  FN(finit_module) \
+  FN(fork) \
+  FN(ftruncate) \
+  FN(getpeername) \
+  FN(init_module) \
+  FN(kill) \
+  FN(link) \
+  FN(linkat) \
+  FN(mkdir) \
+  FN(mkdirat) \
+  FN(mknod) \
+  FN(mknodat) \
+  FN(mmap) \
+  FN(mprotect) \
+  FN(open) \
+  FN(openat) \
+  FN(pipe) \
+  FN(pipe2) \
+  FN(pread64) \
+  FN(preadv) \
+  FN(preadv2) \
+  FN(ptrace) \
+  FN(pwrite64) \
+  FN(pwritev) \
+  FN(pwritev2) \
+  FN(read) \
+  FN(readv) \
+  FN(recvfrom) \
+  FN(recvmsg) \
+  FN(recvmmsg) \
+  FN(rename) \
+  FN(renameat) \
+  FN(renameat2) \
+  FN(rmdir) \
+  FN(sendmsg) \
+  FN(sendmmsg) \
+  FN(sendto) \
+  FN(setfsgid) \
+  FN(setfsuid) \
+  FN(setgid) \
+  FN(setregid) \
+  FN(setresgid) \
+  FN(setresuid) \
+  FN(setreuid) \
+  FN(setuid) \
+  FN(socket) \
+  FN(socketpair) \
+  FN(splice) \
+  FN(symlink) \
+  FN(symlinkat) \
+  FN(tee) \
+  FN(tgkill) \
+  FN(tkill) \
+  FN(truncate) \
+  FN(unlink) \
+  FN(unlinkat) \
+  FN(vfork) \
+  FN(vmsplice) \
+  FN(write) \
+  FN(writev)
+
+typedef int (*nod_syscall_filler_fn)(struct pt_regs *regs, nod_event_hdr_t *evt);
+extern const nod_syscall_filler_fn nod_syscall_filler_table[];
+
+#define FILLER_PROTOTYPE_FN(x)  int f_##x(struct pt_regs *regs, nod_event_hdr_t *evt);
 FILLER_LIST_MAPPER(FILLER_PROTOTYPE_FN)
 #undef FILLER_PROTOTYPE_FN
+int f_ni(struct pt_regs *regs, nod_event_hdr_t *evt); // empty filler for unsupported syscalls
 
-#endif //NOD_FILLER_H_
+#endif // NOD_FILLER_H_

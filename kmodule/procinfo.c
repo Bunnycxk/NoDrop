@@ -162,7 +162,7 @@ nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p)
 
     if (parent) {
         p->entry_addr = parent->entry_addr;
-        memcpy(&p->stack_info, &parent->stack_info, sizeof(struct nod_stack_info));
+        memcpy(&p->stack_info, &parent->stack_info, sizeof(nod_stack_info_t));
     }
     
     return NOD_SUCCESS;    

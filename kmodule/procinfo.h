@@ -6,7 +6,6 @@
 #include <linux/signal.h>
 #include <linux/hashtable.h>
 
-#include "events.h"
 #include "common.h"
 
 enum nod_proc_status {
@@ -49,7 +48,7 @@ struct nod_proc_info {
 	enum nod_proc_status status;
 	struct nod_proc_context ctx;
 	struct nod_proc_security sec;
-	struct nod_stack_info stack_info;
+	nod_stack_info_t stack_info;
 };
 
 #define nod_proc_set_in(proc)			nod_proc_set_status(proc, NOD_IN)

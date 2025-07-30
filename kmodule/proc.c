@@ -9,8 +9,7 @@
 #include "nodrop.h"
 #include "procinfo.h"
 
-#include "common.h"
-#include "events.h"
+#include "nodrop.h"
 #include "ioctl.h"
 
 #define BUFSIZE 30
@@ -93,7 +92,7 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     int ret, cpu;
     uint64_t count;
     nod_ioctl_data_t data;
-    struct nod_stack_info stack;
+    nod_stack_info_t stack;
     struct nod_event_statistic *stat;
     struct nod_proc_info *p = filp->private_data;
 
@@ -106,7 +105,7 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         break;
 
     case NOD_IOCTL_FETCH_BUFFER:
-        if (nod_copy_from_user((void *)&data, (void *)arg, sizeof(data))) {
+        if (copy_from_user((void *)&data, (void *)arg, sizeof(data))) {
             ret = -EFAULT;
             goto out;
         }
@@ -174,7 +173,7 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             goto out;
         }
 
-        if (nod_copy_from_user(&stack, (void __user *)arg, sizeof(stack))) {
+        if (copy_from_user(&stack, (void __user *)arg, sizeof(stack))) {
             ret = -EFAULT;
             goto out;
         }
@@ -196,7 +195,7 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         break;
 
     case NOD_IOCTL_SET_BUFFER_SIZE:
-        if (nod_copy_from_user(&data, (void __user *)arg, sizeof(data))) {
+        if (copy_from_user(&data, (void __user *)arg, sizeof(data))) {
             ret = -EFAULT;
             goto out;
         }
@@ -207,7 +206,7 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         break;
 
     case NOD_IOCTL_GET_BUFFER_SIZE:
-        if (nod_copy_from_user(&data, (void __user *)arg, sizeof(data))) {
+        if (copy_from_user(&data, (void __user *)arg, sizeof(data))) {
             ret = -EFAULT;
             goto out;
         }
@@ -222,7 +221,7 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         break;
     
     case NOD_IOCTL_SET_TARGET_COMM:
-        if (nod_copy_from_user(&data, (void __user *)arg, sizeof(data))) {
+        if (copy_from_user(&data, (void __user *)arg, sizeof(data))) {
             ret = -EFAULT;
             goto out;
         }

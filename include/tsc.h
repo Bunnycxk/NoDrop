@@ -11,10 +11,10 @@
 #include <unistd.h>
 #endif // __KERNEL__
 
-#include "events.h"
+#include "common.h"
 
 // shoule be consistent with the your default CPU frequency
-#define TSC_CPUFREQ_GHZ 2.25
+#define TSC_CPUFREQ_GHZ 2.1
 #define TSC_CPUFREQ_MHZ (TSC_CPUFREQ_GHZ * 1e3)
 #define TSC_CPUFREQ_HZ (TSC_CPUFREQ_GHZ * 1e9)
 

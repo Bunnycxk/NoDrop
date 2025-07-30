@@ -13,7 +13,6 @@
 #include <asm/fpu/internal.h>
 #include <linux/fdtable.h>
 #include "nodrop.h"
-#include "common.h"
 #include "procinfo.h"
 
 

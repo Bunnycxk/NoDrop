@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <fcntl.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -16,6 +17,10 @@
 
 #define START "_start"
 
+#define SYSCALL_EXIT_FAMILY(nr) (__NR_exit == (nr) || __NR_exit_group == (nr))
+#define SYSCALL_EXECV_FAMILY(nr) (__NR_execve == (nr) || __NR_execveat == (nr))
+#define NOD_NEED_EXIT(nr) (SYSCALL_EXIT_FAMILY(nr) || SYSCALL_EXECV_FAMILY(nr))
+
 #define NOREACH __builtin_unreachable();
 #define ARCH_SET_FS 0x1002
 #define ARCH_GET_FS 0x1003
@@ -23,18 +28,18 @@
 extern unsigned long __bdata;
 extern unsigned long __edata;
 
-static char nod_mmheap_pool[NOD_MONITOR_MEM_SIZE];
+static char nod_mmheap_pool[NOD_MONITOR_HEAP_SIZE];
 __attribute__((
     section(NOD_SECTION_NAME))) struct nod_monitor_info __nod_monitor_info = {
     .inited = 0,
 };
 
 // declarations of processing logic
-int nod_monitor_main(int argc, char *argv[], char *env[],
-                     struct nod_stack_info *p);
-weak void nod_monitor_exit(long code, struct nod_stack_info *p) {};
+int nod_monitor_main(int argc, char *argv[], char *env[], nod_stack_info_t *p);
+weak void nod_monitor_exit(struct nod_syscall_args *syscall_args,
+                           nod_stack_info_t *p) {};
 weak int nod_monitor_init(int argc, char *argv[], char *env[],
-                          struct nod_stack_info *p) {
+                          nod_stack_info_t *p) {
   return 0;
 };
 
@@ -57,8 +62,7 @@ __asm__(".text \n"
         "andq $-16,%rsp \n"
         "call _start_c \n");
 
-static int nod_init(int argc, char *argv[], char *env[],
-                    struct nod_stack_info *p) {
+static int nod_init(int argc, char *argv[], char *env[], nod_stack_info_t *p) {
   int rc;
 
   if (likely(__nod_monitor_info.inited)) {
@@ -112,12 +116,14 @@ out:
   exit(-1);
 }
 
-static void nod_fini(int argc, char **argv, char **env,
-                     struct nod_stack_info *p) {
+static void nod_fini(int argc, char **argv, char **env, nod_stack_info_t *p) {
+  struct nod_syscall_args *syscall_args = &p->syscall_args;
   p->hash = nod_calc_hash(p);
-  if (unlikely(SYSCALL_EXIT_FAMILY(p->syscall_nr))) {
-    nod_monitor_exit(p->syscall_nr, p);
-    syscall(p->syscall_nr, p->exit_code);
+  if (unlikely(NOD_NEED_EXIT(syscall_args->syscall_nr))) {
+    nod_monitor_exit(syscall_args, p);
+    syscall(syscall_args->syscall_nr, syscall_args->di,
+            syscall_args->si, syscall_args->dx, syscall_args->r10,
+            syscall_args->r8, syscall_args->r9);
   } else {
 #ifdef NOD_PKEY_SUPPORT
     if (likely(p->pkey != -1)) {
@@ -126,14 +132,14 @@ static void nod_fini(int argc, char **argv, char **env,
 #endif // NOD_PKEY_SUPPORT
     ioctl(p->ioctl_fd, NOD_IOCTL_RESTORE_CONTEXT, p);
   }
+  perror("FATAL: not reachable\n");
   /* NOT REACHABLE */
   NOREACH
-  perror("FATAL: not reachable");
   exit(-1);
 }
 
 static void nod_start_main(int argc, char *argv[], char *env[]) {
-  struct nod_stack_info *p = (struct nod_stack_info *)argv[argc - 1];
+  nod_stack_info_t *p = (nod_stack_info_t *)argv[argc - 1];
   if (likely(nod_init(argc, argv, env, p) == 0)) {
     nod_monitor_main(argc, argv, env, p);
   }
