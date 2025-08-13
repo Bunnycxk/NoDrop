@@ -35,7 +35,8 @@ int init_buffer(nod_buffer_t *buffer) {
   uint64_t malloc_size;
 
   malloc_size =
-      ((sizeof(nod_buffer_info_t) + buffer_size + PAGE_SIZE + PAGE_SIZE - 1) & PAGE_MASK);
+      ((sizeof(nod_buffer_info_t) + buffer_size + PAGE_SIZE + PAGE_SIZE - 1) &
+       PAGE_MASK);
   buffer->info = vmalloc_user(malloc_size);
   if (!buffer->info) {
     ret = -ENOMEM;
@@ -75,7 +76,8 @@ void reset_buffer(nod_buffer_t *buffer, int flags) {
     buffer->event_count = 0;
 }
 
-int record_one_event(struct nod_proc_info *p, struct pt_regs *regs, long id, int force) {
+int record_one_event(struct nod_proc_info *p, struct pt_regs *regs, long id,
+                     int force) {
   int rc;
   nod_event_hdr_t *hdr;
   nod_buffer_info_t *info;
@@ -90,10 +92,14 @@ int record_one_event(struct nod_proc_info *p, struct pt_regs *regs, long id, int
   info = p->buffer.info;
 
   if (unlikely(info->tail >= info->buffer_size)) {
-    vpr_err("Buffer overflow for process %d, buffer: %lx, tail: %llx, buffer_size: %llx, malloc_size: %llx\n",
-            p->pid, (unsigned long)info->buffer, info->tail, info->buffer_size, info->malloc_size);
-    stat->n_drop_evts++;
-    return NOD_FAILURE_INVALID_EVENT;
+    // Buffer is full, reset it
+    vpr_err("Buffer overflow for proc (%d), dropping event, tail: %x, "
+            "buffer_size: %llx\n",
+            p->pid, info->tail, info->buffer_size);
+    stat->n_drop_evts += info->nevents;
+    info->nevents = 0;
+    info->tail = 0;
+    return NOD_FAILURE_BUFFER_FULL;
   }
 
   hdr = (nod_event_hdr_t *)(info->buffer + info->tail);
@@ -111,11 +117,14 @@ int record_one_event(struct nod_proc_info *p, struct pt_regs *regs, long id, int
     info->tail += sizeof(*hdr) + hdr->len;
     // hdr->ts = nod_nsecs();
     hdr->ts = nod_rdtsc(); // Use rdtsc for high precision timestamp
-  } else if (rc < 0) {
+  } else if (unlikely(rc < 0)) {
     stat->n_drop_evts++;
+    return NOD_FAILURE_BUFFER_FULL;
   }
 
   if (force || info->tail >= info->buffer_size) {
+    // info->nevents = 0;
+    // info->tail = 0;
     return nod_load_monitor(p, regs);
   }
 

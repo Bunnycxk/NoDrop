@@ -134,6 +134,8 @@ enum nod_proc_status
 nod_proc_release(struct task_struct *task)
 {
     int retval;
+    int enter_cnt;
+    uint64_t residence_time_sum, total_nevents, total_nevents_bytes;
     struct nod_proc_info *p;
 
     p = __find_proc_info(task);
@@ -143,6 +145,19 @@ nod_proc_release(struct task_struct *task)
 
     retval = p->status;
     per_cpu(g_stat, smp_processor_id()).n_drop_evts_unsolved += p->buffer.info->nevents;
+
+    if (p->buffer.info) {
+        residence_time_sum = p->buffer.info->stat.residence_time_sum;
+        total_nevents = p->buffer.info->stat.total_nevents;
+        total_nevents_bytes = p->buffer.info->stat.total_nevents_bytes;
+        enter_cnt = p->buffer.info->stat.enter_cnt;
+        vpr_info("proc %d: avg residence time %llu ticks, nevents %llu, bytes %llu, enter %d\n",
+          p->pid,
+          enter_cnt ? residence_time_sum / enter_cnt : 0,
+          enter_cnt ? total_nevents / enter_cnt : 0,
+          enter_cnt ? total_nevents_bytes / enter_cnt : 0,
+          enter_cnt);
+    }
 
     __remove_proc_info(p);
     nod_free_procinfo(p);

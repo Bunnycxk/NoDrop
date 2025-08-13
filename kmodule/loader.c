@@ -419,6 +419,7 @@ int nod_load_monitor(struct nod_proc_info *p, struct pt_regs *regs) {
 
   retval = update_stack_info(&p->stack_info, regs, p->stack_info_addr);
   if (retval > 0) {
+    vpr_err("cannot update stack info: %d\n", retval);
     goto out;
   }
 

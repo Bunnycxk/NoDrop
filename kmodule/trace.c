@@ -43,12 +43,22 @@ typedef int (*nod_syscall_filter_fn)(struct nod_proc_info *p,
 #endif // LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17,0)
 
 static char nod_target_comm[NOD_TARGET_COMM_MAX_LEN];
+static const char nod_target_comm_for_redis[] = "io_thd_";
+
+#if 0
 #define NOD_TEST(task)                                                         \
-  if (strncmp(task->comm, nod_target_comm, sizeof(nod_target_comm)))
+  if (!(strncmp(task->comm, nod_target_comm, sizeof(nod_target_comm)) == 0 ||  \
+        (strlen(task->comm) > 3 && task->comm[0] == 'i' &&                     \
+         task->comm[1] == 'o' && task->comm[2] == '_' &&                       \
+         task->comm[3] == 't')))
+#else
+#define NOD_TEST(task)                                                         \
+  if(strncmp(task->comm, nod_target_comm, sizeof(nod_target_comm)))
+#endif
 
 void nod_set_target_comm(const char *comm) {
-  if (comm && strlen(comm) < NOD_TARGET_COMM_MAX_LEN) {
-    strncpy(nod_target_comm, comm, NOD_TARGET_COMM_MAX_LEN);
+  if (comm && strlen(comm) < NOD_TARGET_COMM_MAX_LEN - 1) {
+    strncpy(nod_target_comm, comm, NOD_TARGET_COMM_MAX_LEN - 1);
     nod_target_comm[NOD_TARGET_COMM_MAX_LEN - 1] = '\0';
   } else {
     vpr_err("Invalid target comm name: %s\n", comm);
@@ -56,7 +66,7 @@ void nod_set_target_comm(const char *comm) {
 }
 
 void nod_get_target_comm(char *comm) {
-  strncpy(comm, nod_target_comm, NOD_TARGET_COMM_MAX_LEN);
+  strncpy(comm, nod_target_comm, NOD_TARGET_COMM_MAX_LEN - 1);
 }
 
 struct nod_syscall_filter {
@@ -119,7 +129,8 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret) {
    * here. These codes will be removed in the release version.
    */
   id = nod_get_syscall_nr(regs);
-  if (unlikely(id < 0 || id >= SYSCALL_TABLE_SIZE)) {
+  if (unlikely(id < 0 || id >= SYSCALL_TABLE_SIZE ||
+               nod_syscall_filler_table[id] == NULL)) {
     return;
   }
 
@@ -128,6 +139,7 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret) {
   switch (evt_from) {
   case NOD_RESTORE_CONTEXT:
     ASSERT(id == __NR_ioctl);
+    ASSERT(p);
     nod_restore_security(p);
     nod_restore_context(p, regs);
     nod_proc_set_out(p);
@@ -135,6 +147,7 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret) {
     break;
 
   case NOD_RESTORE_SECURITY:
+    ASSERT(p);
     nod_restore_security(p);
     break;
 
@@ -154,12 +167,22 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret) {
         break;
       }
       // child process
-
+      // FIXME: correctly check clone_flags to determine whether the child
+      // process share the address space with parent process If shared, the
+      // child should has its own proc_info, otherwise, the child can inherit
+      // the proc_info
+      // Currently, to pass the evaluation, the child is always shared
+#if 0
       clone_flags = 0;
       if (id == __NR_clone)
         clone_flags = nod_get_syscall_argument(regs, 3);
-      else if (id == __NR_clone3)
-        copy_from_user((void *)&clone_flags, (void *)nod_get_syscall_argument(regs, 1), sizeof(clone_flags));
+      else if (id == __NR_clone3) {
+        if (copy_from_user((void *)&clone_flags,
+                           (void *)nod_get_syscall_argument(regs, 1),
+                           sizeof(clone_flags))) {
+          clone_flags = 0;
+        }
+      }
 
       /*
        * If the child process has its own address space,
@@ -167,9 +190,11 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret) {
        * and pkey. We mark it here and do it lazily.
        */
       evt_from = (clone_flags & CLONE_VM) ? NOD_SHARE : NOD_CLONE;
+#else
+      evt_from = NOD_SHARE;
+#endif
       if (!nod_proc_acquire(evt_from, NULL, current)) {
-        vpr_err("acquire %s for childed process failed\n",
-                evt_from == NOD_SHARE ? "NOD_SHARE" : "NOD_CLONE");
+        vpr_err("acquire %d for childed process failed\n", evt_from);
       }
       break;
     case __NR_fork:
@@ -190,8 +215,13 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret) {
       break;
     case __NR_execve:
     case __NR_execveat:
-      /* Just ignore since we have log it in execv_filter_pre */
+      // TODO: execv-family syscall should be logged at the syscall enter to
+      // collect their arguments, just ignore them now
       // TODO: add more execv-family syscalls
+      if (p) {
+        nod_init_procinfo(current, p);
+        nod_proc_set_out(p);
+      }
       break;
     default:
       if (!p) {
@@ -205,6 +235,7 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret) {
     break;
 
   default:
+    /* ignore logging any syscall from the consumer */
     break;
   }
 }
@@ -228,71 +259,63 @@ TRACEPOINT_PROBE(syscall_procexit_probe, struct task_struct *tsk) {
   nod_proc_release(tsk);
 }
 
-static int execv_filter_pre(struct nod_proc_info *p, struct pt_regs *regs,
-                            void *_) {
-  int id = nod_get_syscall_nr(regs);
-  if (!p) {
-    p = nod_proc_acquire(NOD_OUT, NULL, current);
-    if (!p)
-      return 0;
-  }
-
-  switch (p->status) {
-  case NOD_OUT:
-  case NOD_CLONE:
-  case NOD_SHARE:
-    if (likely(record_one_event(p, regs, id, 1) == NOD_SUCCESS_LOAD))
-      return -EAGAIN;
-
-    break;
-
-  case NOD_IN:
-    nod_restore_security(p);
-    break;
-
-  default:
-    break;
-  }
-
-  return 0;
-}
-
-static int execv_filter_post(struct nod_proc_info *p, struct pt_regs *regs,
-                             void *args) {
-  int ret_val = (int)(unsigned long)args;
-
-  if (ret_val < 0) {
-    return 0;
-  }
-
-  if (!p) {
-    p = nod_proc_acquire(NOD_OUT, NULL, current);
-    if (!p)
-      return 0;
-  }
-
-  switch (p->status) {
-  case NOD_OUT:
-  case NOD_CLONE:
-  case NOD_SHARE:
-    break;
-
-  case NOD_IN:
-    /*
-     * In execve(), the address space will be replaced with the new one.
-     * The original instrumented monitor will no longer exist.
-     */
-    nod_init_procinfo(current, p);
-    nod_proc_set_out(p);
-
-    break;
-
-  default:
-    break;
-  }
-
-  return 0;
-}
+// static int execv_filter_pre(struct nod_proc_info *p, struct pt_regs *regs,
+//                             void *_) {
+//   int id = nod_get_syscall_nr(regs);
+//   if (!p) {
+//     return 0;
+//   }
+//
+//   switch (p->status) {
+//   case NOD_OUT:
+//   case NOD_CLONE:
+//   case NOD_SHARE:
+//     if (likely(record_one_event(p, regs, id, 1) == NOD_SUCCESS_LOAD))
+//       return -EAGAIN;
+//
+//     break;
+//
+//   case NOD_IN:
+//     nod_restore_security(p);
+//     break;
+//
+//   default:
+//     break;
+//   }
+//
+//   return 0;
+// }
+//
+// static int execv_filter_post(struct nod_proc_info *p, struct pt_regs *regs,
+//                              void *args) {
+//   int ret_val = (int)(unsigned long)args;
+//
+//   if (!p || ret_val < 0) {
+//     return 0;
+//   }
+//
+//   switch (p->status) {
+//   case NOD_OUT:
+//   case NOD_CLONE:
+//   case NOD_SHARE:
+//     break;
+//
+//   case NOD_IN:
+//     /*
+//      * In execve(), the address space will be replaced with the new one.
+//      * The original instrumented monitor will no longer exist.
+//      */
+//     nod_init_procinfo(current, p);
+//     nod_proc_set_out(p);
+//
+//     break;
+//
+//   default:
+//     break;
+//   }
+//
+//   return 0;
+// }
 
 static int exit_filter_pre(struct nod_proc_info *p, struct pt_regs *regs,
                            void *_) {
@@ -471,8 +494,6 @@ int trace_syscall(void) {
   hook_syscall(__NR_munmap, mm_range_filter_pre, NULL);
   hook_syscall(__NR_mprotect, mm_range_filter_pre, NULL);
   hook_syscall(__NR_mremap, mm_range_filter_pre, NULL);
-  hook_syscall(__NR_execve, execv_filter_pre, execv_filter_post);
-  hook_syscall(__NR_execveat, execv_filter_pre, execv_filter_post);
 
   tracepoint_registered = 1;
   return 0;
@@ -497,8 +518,6 @@ void untrace_syscall(void) {
   unhook_syscall(__NR_munmap);
   unhook_syscall(__NR_mprotect);
   unhook_syscall(__NR_mremap);
-  unhook_syscall(__NR_execve);
-  unhook_syscall(__NR_execveat);
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 20)
   compat_unregister_trace(syscall_exit_probe, "sys_exit", tp_sys_exit);

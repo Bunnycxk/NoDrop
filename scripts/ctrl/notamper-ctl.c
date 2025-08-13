@@ -12,12 +12,12 @@ int main(int argc, char *argv[]) {
   FILE *file;
   char *buf;
   uint64_t len;
+  unsigned long value;
   nod_ioctl_data_t data;
 
   if (argc < 2) {
     fprintf(stderr,
-            "Usage: %s [clean|fetch|stat|clear-stat|start|stop|count|bufsize "
-            "(size in KB)]\n",
+            "Usage: %s [clean|fetch|stat|clear-stat|start|stop|count|bufsize <size,B,K,M,G>|comm <comm>]\n",
             argv[0]);
     return 0;
   }
@@ -97,7 +97,17 @@ int main(int argc, char *argv[]) {
 
   } else if (!strcmp(argv[1], "bufsize")) {
     if (argc >= 3) {
-      data.buffer_size.bufsize = (unsigned long)atol(argv[2]) * 1024;
+      // argv[2] is size with its unit, transform it to bytes
+      value = (unsigned long)atol(argv[2]);
+      switch(argv[2][strlen(argv[2]) - 1]) {
+        case 'G':
+          value *= 1024;
+        case 'M':
+          value *= 1024;
+        case 'K':
+          value *= 1024;
+      }
+      data.buffer_size.bufsize = value;
       if ((ret = ioctl(fd, NOD_IOCTL_SET_BUFFER_SIZE, &data))) {
         fprintf(stderr, "set buffer size failed: %d\n", ret);
         return -1;

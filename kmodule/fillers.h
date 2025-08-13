@@ -21,8 +21,6 @@
   FN(dup) \
   FN(dup2) \
   FN(dup3) \
-  FN(execve) \
-  FN(execveat) \
   FN(exit) \
   FN(exit_group) \
   FN(fchdir) \
@@ -89,6 +87,8 @@
   FN(vmsplice) \
   FN(write) \
   FN(writev)
+  // FN(execve)
+  // FN(execveat)
 
 typedef int (*nod_syscall_filler_fn)(struct pt_regs *regs, nod_event_hdr_t *evt);
 extern const nod_syscall_filler_fn nod_syscall_filler_table[];

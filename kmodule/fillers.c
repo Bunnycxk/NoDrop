@@ -28,7 +28,12 @@
 
 #define EVENT_TABLE_MAP(x) [__NR_##x] = f_##x,
 const nod_syscall_filler_fn nod_syscall_filler_table[SYSCALL_TABLE_SIZE] = {
-    [0 ... SYSCALL_TABLE_SIZE - 1] = f_ni, FILLER_LIST_MAPPER(EVENT_TABLE_MAP)};
+    [0 ... SYSCALL_TABLE_SIZE - 1] = NULL,
+    [__NR_ioctl] = f_ni,
+    // TODO: execve and execveat are not supported yet
+    [__NR_execve] = f_ni,
+    [__NR_execveat] = f_ni,
+    FILLER_LIST_MAPPER(EVENT_TABLE_MAP)};
 #undef EVENT_TABLE_ITEM
 
 static inline int add_64(nod_event_hdr_t *evt, u64 v, int idx) {
@@ -388,7 +393,7 @@ NOD_FILLER(pipe2) {
     int fds[2];
     rc = copy_from_user(fds, fildes, sizeof(fds));
     if (rc < 0) {
-      return rc; // failed to read fds, return error 
+      return rc; // failed to read fds, return error
     }
     // Pack two fds into one 64-bit value (like eauditk pipe_exit does)
     fds_packed = ((long)fds[0]) | (((long)fds[1]) << 32);
@@ -701,66 +706,81 @@ NOD_FILLER(vfork) {
   return evt->len;
 }
 
-/* both execve and execveat are collected at the syscall enter, instead of the
- * syscall exit */
-NOD_FILLER(execve) {
-  const char __user *filename;
-  const char __user *const __user *argv;
-  const char __user *const __user *envp;
-  int ret_val, i;
-  long packed_flags_fd;
-
-  filename = (const char __user *)nod_get_syscall_argument(regs, 1);
-  argv = (const char __user *const __user *)nod_get_syscall_argument(regs, 2);
-  envp = (const char __user *const __user *)nod_get_syscall_argument(regs, 3);
-  ret_val = nod_get_syscall_ret(regs);
-
-  // Pack flags and fd like eauditk: flags=0, fd=AT_FDCWD for execve
-  packed_flags_fd = ((long)0 << 32) | AT_FDCWD;
-
-  // Record numeric arguments first (like eauditk: flags+fd packed)
-  evt->len += add_64(evt, packed_flags_fd, 1); // packed flags+fd
-  evt->len += add_64(evt, ret_val, 2);         // return value
-  // Record filename string last
-  evt->len += add_string_user(evt, filename);
-  // Record argv
-  for (i = 0; argv && argv[i]; i++) {
-    evt->len += add_string_user(evt, argv[i]);
-  }
-  // envp is ignored
-  return evt->len;
-}
-
-NOD_FILLER(execveat) {
-  const char __user *filename;
-  const char __user *const __user *argv;
-  const char __user *const __user *envp;
-  long dirfd, flags;
-  int ret_val, i;
-  long packed_flags_fd;
-
-  dirfd = nod_get_syscall_argument(regs, 1);
-  filename = (const char __user *)nod_get_syscall_argument(regs, 2);
-  argv = (const char __user *const __user *)nod_get_syscall_argument(regs, 3);
-  envp = (const char __user *const __user *)nod_get_syscall_argument(regs, 4);
-  flags = nod_get_syscall_argument(regs, 5);
-  ret_val = nod_get_syscall_ret(regs);
-
-  // Pack flags and fd like eauditk: (flags << 32) | fd
-  packed_flags_fd = (flags << 32) | dirfd;
-
-  // Record numeric arguments first (like eauditk: flags+fd packed)
-  evt->len += add_64(evt, packed_flags_fd, 1); // packed flags+fd
-  evt->len += add_64(evt, ret_val, 2);         // return value
-  // Record filename string last
-  evt->len += add_string_user(evt, filename);
-  // Record argv
-  for (i = 0; argv && argv[i]; i++) {
-    evt->len += add_string_user(evt, argv[i]);
-  }
-  // envp is ignored
-  return evt->len;
-}
+// TODO: execve and execveat cannot be logged at the syscall exit as their arguments does not exists
+// after the memory address is replaced.
+//
+// /* both execve and execveat are collected at the syscall enter, instead of
+// the
+//  * syscall exit */
+// NOD_FILLER(execve) {
+//   const char __user *filename;
+//   const char __user **argv;
+//   const char __user **envp;
+//   char __user *argv_ptr;
+//   long packed_flags_fd;
+//   int rc;
+//
+//   filename = (const char __user *)nod_get_syscall_argument(regs, 1);
+//   argv = (const char __user **)nod_get_syscall_argument(regs, 2);
+//   envp = (const char __user **)nod_get_syscall_argument(regs, 3);
+//
+//   // Pack flags and fd like eauditk: flags=0, fd=AT_FDCWD for execve
+//   packed_flags_fd = ((long)0 << 32) | AT_FDCWD;
+//
+//   // Record numeric arguments first (like eauditk: flags+fd packed)
+//   evt->len += add_64(evt, packed_flags_fd, 1); // packed flags+fd
+//   // Record filename string last
+//   evt->len += add_string_user(evt, filename);
+//   // Record argv
+//   do {
+//     rc = copy_from_user(&argv_ptr, argv, sizeof(argv_ptr));
+//     if (rc < 0) {
+//       return rc;
+//     }
+//     if (argv_ptr == NULL) {
+//       break; // end of argv
+//     }
+//     evt->len += add_string_user(evt, argv_ptr);
+//   } while (argv++);
+//   // envp is ignored
+//   return evt->len;
+// }
+//
+// NOD_FILLER(execveat) {
+//   const char __user *filename;
+//   const char __user **argv;
+//   const char __user **envp;
+//   char __user *argv_ptr;
+//   long dirfd, flags, packed_flags_fd;
+//   int rc;
+//
+//   dirfd = nod_get_syscall_argument(regs, 1);
+//   filename = (const char __user *)nod_get_syscall_argument(regs, 2);
+//   argv = (const char __user **)nod_get_syscall_argument(regs, 3);
+//   envp = (const char __user **)nod_get_syscall_argument(regs, 4);
+//   flags = nod_get_syscall_argument(regs, 5);
+//
+//   // Pack flags and fd like eauditk: (flags << 32) | fd
+//   packed_flags_fd = (flags << 32) | dirfd;
+//
+//   // Record numeric arguments first (like eauditk: flags+fd packed)
+//   evt->len += add_64(evt, packed_flags_fd, 1); // packed flags+fd
+//   // Record filename string last
+//   evt->len += add_string_user(evt, filename);
+//   // Record argv
+//   do {
+//     rc = copy_from_user(&argv_ptr, argv, sizeof(argv_ptr));
+//     if (rc < 0) {
+//       return rc;
+//     }
+//     if (argv_ptr == NULL) {
+//       break; // end of argv
+//     }
+//     evt->len += add_string_user(evt, argv_ptr);
+//   } while (argv++);
+//   // envp is ignored
+//   return evt->len;
+// }
 
 NOD_FILLER(exit) {
   long status;

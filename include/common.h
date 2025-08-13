@@ -60,7 +60,13 @@ typedef struct nod_rdma_protocal_s {
 typedef struct nod_buffer_info_s {
   nod_rdma_protocal_t rdma_protocal;
   volatile uint64_t nevents;
-  volatile uint64_t tail;
+  struct {
+    volatile uint64_t residence_time_sum;
+    volatile uint64_t total_nevents;
+    volatile uint64_t total_nevents_bytes;
+    volatile int enter_cnt;
+  } stat;
+  volatile uint32_t tail;
   uint64_t malloc_size;
   uint64_t buffer_size;
   char buffer[0];

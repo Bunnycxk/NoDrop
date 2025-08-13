@@ -25,8 +25,6 @@
 
 #define NOD_RDMA_INIT_PSN 0
 static nod_rdma_ctrl_block_t rdma_cb;
-static uint64_t residence_time_sum, residence_time_cnt;
-static uint64_t total_nevents, total_nevents_cnt;
 
 static void nod_rdma_protocal_init(nod_rdma_protocal_t *protocal) {
   protocal->psn = NOD_RDMA_INIT_PSN;
@@ -85,8 +83,6 @@ int nod_monitor_init(int argc, char *argv[], char *env[], nod_stack_info_t *p) {
 
   p->ioctl_fd = ioctl_fd;
   p->buffer_info = buffer_info;
-  residence_time_cnt = residence_time_sum = 0;
-  total_nevents = total_nevents_cnt = 0;
 
 #if defined(NOD_RDMA_SUPPORT)
   nod_rdma_config_t rdma_config = {
@@ -166,12 +162,6 @@ void nod_monitor_exit(struct nod_syscall_args *syscall_args, nod_stack_info_t *p
 
   munmap(buffer_info, rdma_size);
   close(p->ioctl_fd);
-
-  printf("NoTamper(%ld): avg nevents %lu (%lu) avg residence time %lu ticks (%lu)\n",
-         syscall(SYS_gettid),
-         total_nevents_cnt ? (total_nevents / total_nevents_cnt) : 0, total_nevents_cnt,
-         residence_time_cnt ? (residence_time_sum / residence_time_cnt) : 0,
-         residence_time_cnt);
 }
 
 int nod_monitor_main(int argc, char *argv[], char *env[], nod_stack_info_t *p) {
@@ -195,15 +185,18 @@ int nod_monitor_main(int argc, char *argv[], char *env[], nod_stack_info_t *p) {
   }
 #endif // NOD_RDMA_SUPPORT
 
-  residence_time_sum += nod_rdtsc() - first_evt->ts;
-  residence_time_cnt++;
   rc = 0;
 
 #ifdef NOD_RDMA_SUPPORT
 out:
 #endif // NOD_RDMA_SUPPORT
-  total_nevents += buffer_info->nevents;
-  total_nevents_cnt++;
+
+  // statistics
+  buffer_info->stat.residence_time_sum += nod_rdtsc() - first_evt->ts;
+  buffer_info->stat.total_nevents += buffer_info->nevents;
+  buffer_info->stat.total_nevents_bytes += buffer_info->tail;
+  buffer_info->stat.enter_cnt++;
+
   buffer_info->nevents = buffer_info->tail = 0;
   return rc;
 }

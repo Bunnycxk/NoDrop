@@ -41,7 +41,7 @@ else()
 endif()
 
 if(NOT BUFFER_SIZE)
-  set(BUFFER_SIZE 4*Kib)
+  set(BUFFER_SIZE 2*Kib)
 endif()
 
 if(NOT CONSUMER)
