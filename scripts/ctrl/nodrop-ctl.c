@@ -142,7 +142,8 @@ int main(int argc, char *argv[])
         }
         if (!ioctl(fd, NOD_IOCTL_START_RECORDING, 0) && !ioctl(fd, NOD_IOCTL_SET_LUA_STATE, &lua_state))
             fprintf(stderr, "Start: %s\n", lua_state.lua_path);
-    } else if (!strcmp(argv[1], "bufsize")) 
+    } 
+    else if (!strcmp(argv[1], "bufsize")) 
     {
         if (argc >= 3)
         {
@@ -159,7 +160,7 @@ int main(int argc, char *argv[])
             return -1;
         }
         printf("buffer size: %lu\n", bufsize);
-
+    }
     else if (!strcmp(argv[1], "record"))
     {
         if (argc > 3) {

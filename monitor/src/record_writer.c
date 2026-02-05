@@ -4,7 +4,7 @@
 #include "common.h"
 
 #ifndef PATH_FMT
-#define PATH_FMT STORE_PATH "/%u-%ld.buf"
+#define PATH_FMT CONFIG_STORE_PATH "/%u-%ld.buf"
 #endif
 
 static char record_path[100];
