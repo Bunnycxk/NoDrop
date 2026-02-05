@@ -22,7 +22,7 @@ static struct nod_lua_state g_lua_state = {
     .lua_path = "",
     .lua_mtime = 0,
 };
-
+static int g_record_flag = NOD_RECORD_MODE_STOP;
 static int nod_dev_open(struct inode *inode, struct file *filp)
 {
     struct nod_proc_info *p;
@@ -225,19 +225,22 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         break;
 
     case NOD_IOCTL_GET_LUA_STATE:
+    {
         if (copy_to_user((void __user *)arg,
                          &g_lua_state,
                          sizeof(g_lua_state)))
             return -EFAULT;
         break;
+    }
 
     case NOD_IOCTL_SET_LUA_STATE:
+    {
         if (copy_from_user(&g_lua_state,
                            (void __user *)arg,
                            sizeof(g_lua_state)))
             return -EFAULT;
         break;
-
+    }
     case NOD_IOCTL_SET_BUFFER_SIZE:
         if (nod_event_set_buffer_size(arg))
         {
@@ -259,6 +262,18 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         }
         break;
 
+    case NOD_IOCTL_SET_RECORD_FLAG:
+        if (copy_from_user(&g_record_flag,
+                           (void __user *)arg,
+                           sizeof(int)))
+            return -EFAULT;
+        break;
+    case NOD_IOCTL_GET_RECORD_FLAG:
+        if (copy_to_user((void __user *)arg,
+                         &g_record_flag,
+                         sizeof(int)))
+            return -EFAULT;
+        break;
     default:
         ret = -EINVAL;
         goto out;
@@ -276,7 +291,7 @@ static int nod_dev_mmap(struct file *filp, struct vm_area_struct *vma)
     long length;
     struct nod_proc_info *p;
     const struct nod_buffer_info *info;
-    
+
     p = filp->private_data;
     if (!p || p->status != NOD_IN)
     {

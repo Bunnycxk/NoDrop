@@ -13,7 +13,7 @@ int main(int argc, char *argv[])
     int fd;
     int ret;
     FILE *file;
-    unsigned long bufsize;
+	unsigned long bufsize;
     struct buffer_count_info cinfo;
     struct fetch_buffer_struct fetch;
     struct nod_event_statistic nod_stat;
@@ -110,28 +110,36 @@ int main(int argc, char *argv[])
     }
     else if (!strcmp(argv[1], "start"))
     {
-        if (argc <= 2)
+        if (argc > 3)
         {
             fprintf(stderr, "Usage: %s start <lua_path>\n", argv[0]);
             return -1;
         }
-        if (!realpath(argv[2], lua_path))
+        if (argc == 3)
         {
-            fprintf(stderr, "%s : lua path error\n", argv[2]);
-            return -1;
+            if (!realpath(argv[2], lua_path))
+            {
+                fprintf(stderr, "%s : lua path error\n", argv[2]);
+                return -1;
+            }
+            if (strlen(lua_path) + 1 > 256)
+            {
+                fprintf(stderr, "%s : lua path too long\n", lua_path);
+                return -1;
+            }
+            strcpy(lua_state.lua_path, lua_path);
+            if (stat(lua_state.lua_path, &lua_st))
+            {
+                fprintf(stderr, "%s : lua file error\n", lua_path);
+                return -1;
+            }
+            lua_state.lua_mtime = lua_st.st_mtime;
         }
-        if (strlen(lua_path) + 1 > 256)
+        else
         {
-            fprintf(stderr, "%s : lua path too long\n", lua_path);
-            return -1;
+            lua_state.lua_path[0] = '\0';
+            lua_state.lua_mtime = 0;
         }
-        strcpy(lua_state.lua_path, lua_path);
-        if (stat(lua_state.lua_path, &lua_st))
-        {
-            fprintf(stderr, "%s : lua file error\n", lua_path);
-            return -1;
-        }
-        lua_state.lua_mtime = lua_st.st_mtime;
         if (!ioctl(fd, NOD_IOCTL_START_RECORDING, 0) && !ioctl(fd, NOD_IOCTL_SET_LUA_STATE, &lua_state))
             fprintf(stderr, "Start: %s\n", lua_state.lua_path);
     } else if (!strcmp(argv[1], "bufsize")) 
@@ -151,6 +159,29 @@ int main(int argc, char *argv[])
             return -1;
         }
         printf("buffer size: %lu\n", bufsize);
+
+    else if (!strcmp(argv[1], "record"))
+    {
+        if (argc > 3) {
+            fprintf(stderr, "Usage: %s record [normal, compress, none] (default normal)\n", argv[0]);
+            return -1;
+        }
+        int record_flag = NOD_RECORD_MODE_START;
+        if (argc == 3) {
+            if (!strcmp(argv[2], "none"))
+                record_flag = NOD_RECORD_MODE_STOP;
+            else if (!strcmp(argv[2], "normal"))
+                record_flag = NOD_RECORD_MODE_START;
+            else if (!strcmp(argv[2], "compress"))
+                record_flag = NOD_RECORD_MODE_COMPRESS;
+            else {
+                fprintf(stderr, "Usage: %s record [normal, compress, none] (default normal)\n", argv[0]);
+                return -1;
+            }
+        }
+        if (!ioctl(fd, NOD_IOCTL_SET_RECORD_FLAG, &record_flag)) {
+            fprintf(stderr, "Record set %s\n", record_flag==0 ? "none": record_flag == 1 ? "normal" : "compress");
+        }
     }
     else
     {

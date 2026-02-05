@@ -27,5 +27,6 @@ musl-src/
 *.out*
 results*
 postmark.pmrc
-/build/
 /lua/
+/zlib/
+/build/
