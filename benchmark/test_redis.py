@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-
 import os
 import time
 import subprocess
@@ -13,18 +12,22 @@ from multiprocessing import Process, Semaphore
 # Redis server: single core
 REDIS_CPU = os.environ.get("REDIS_CPU_CORE", "0")
 
-# memtier: avoid Redis core
-MEMTIER_CPU = os.environ.get("MEMTIER_CPU_CORES", "1-2")
+# memtier: avoid Redis core (can be 1-7 etc.)
+MEMTIER_CPU = os.environ.get("MEMTIER_CPU_CORES", "1-7")
 
 LOOP = 10
 DURATION = 10
-THREADS = 4
+THREADS = 2
 CLIENTS = 64
-
-UID = 1000
 
 HOST = "127.0.0.1"
 PORT = 6379
+
+# cgroup v1 memory limit (provided by run_bench.sh)
+REDIS_MEM_CGROUP_NAME = os.environ.get("REDIS_MEM_CGROUP_NAME", "redis_bench")
+REDIS_MEM_LIMIT_BYTES = int(os.environ.get("REDIS_MEM_LIMIT_BYTES", str(2 * 1024 * 1024 * 1024)))
+CGROUP_MEM_BASE = "/sys/fs/cgroup/memory"
+CGROUP_PATH = os.path.join(CGROUP_MEM_BASE, REDIS_MEM_CGROUP_NAME)
 
 cmd = (
     f"taskset -c {MEMTIER_CPU} "
@@ -38,10 +41,49 @@ cmd = (
 )
 
 #####################################
+# Helpers: cgroup v1 memory
+#####################################
+
+def ensure_mem_cgroup():
+    """
+    Best-effort ensure the memory cgroup exists and has the expected limit.
+    run_bench.sh already does this; we keep a lightweight safety net here.
+    """
+    if not os.path.isdir(CGROUP_MEM_BASE):
+        print(f"[WARN] {CGROUP_MEM_BASE} not found; skip memory limit.")
+        return False
+
+    try:
+        os.makedirs(CGROUP_PATH, exist_ok=True)
+        limit_path = os.path.join(CGROUP_PATH, "memory.limit_in_bytes")
+        with open(limit_path, "w") as f:
+            f.write(str(REDIS_MEM_LIMIT_BYTES))
+        return True
+    except Exception as e:
+        print("[WARN] ensure_mem_cgroup failed:", e)
+        return False
+
+def attach_pid_to_mem_cgroup(pid: int):
+    """
+    Attach Redis pid into /sys/fs/cgroup/memory/<group>/tasks
+    """
+    try:
+        tasks_path = os.path.join(CGROUP_PATH, "tasks")
+        with open(tasks_path, "w") as f:
+            f.write(str(pid))
+    except Exception as e:
+        print("[WARN] attach pid to mem cgroup failed:", e)
+
+#####################################
 # Redis lifecycle
 #####################################
 
 def prepare():
+    # best-effort: make sure port 6379 not occupied by stale process
+    subprocess.run("pids=$(lsof -t -iTCP:6379 -sTCP:LISTEN 2>/dev/null || true); "
+                   "if [ -n \"$pids\" ]; then kill -9 $pids || true; fi",
+                   shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
     proc = subprocess.Popen(
         f"taskset -c {REDIS_CPU} "
         f"./redis/redis_/src/redis-server "
@@ -50,7 +92,15 @@ def prepare():
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    time.sleep(1)
+
+    # attach to cgroup ASAP
+    if ensure_mem_cgroup():
+        # tiny sleep so /proc/<pid> exists and tasks write is accepted
+        time.sleep(0.2)
+        attach_pid_to_mem_cgroup(proc.pid)
+
+    # wait for redis to listen
+    time.sleep(1.0)
     return proc
 
 def finish(proc):
@@ -69,15 +119,15 @@ def execute_redis_benchmark():
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
         )
-        lines = f.stdout.decode("utf-8").split("\n")
+        lines = f.stdout.decode("utf-8", errors="ignore").split("\n")
         for line in lines:
-            if "Totals" in line:
+            if line.strip().startswith("Totals"):
                 # Totals     Ops/sec    Hits/sec ...
                 return float(line.split()[1])
-        return 0
+        return 0.0
     except Exception as e:
         print("memtier error:", e)
-        return 0
+        return 0.0
 
 #####################################
 # Multiprocessing logic
@@ -87,22 +137,22 @@ s1 = Semaphore(0)
 s2 = Semaphore(0)
 
 def task1():
+    proc = None
     first = True
-    os.setgid(UID)
-    os.setuid(UID)
     for _ in range(LOOP):
         s1.acquire()
-        if not first:
+        if not first and proc is not None:
             finish(proc)
         proc = prepare()
         first = False
         s2.release()
     s1.acquire()
-    finish(proc)
+    if proc is not None:
+        finish(proc)
 
 def task2():
     res = []
-    total_cost = 0
+    total_cost = 0.0
 
     print(cmd)
 
@@ -120,8 +170,8 @@ def task2():
 
     s1.release()
 
-    avg = sum(res) / len(res)
-    var = sum((x - avg) ** 2 for x in res) / len(res)
+    avg = sum(res) / len(res) if res else 0.0
+    var = sum((x - avg) ** 2 for x in res) / len(res) if res else 0.0
 
     print("Variance:", round(var, 6))
     print("Average:", round(avg, 2), "ops/sec")
